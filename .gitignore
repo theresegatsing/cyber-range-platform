@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Node / React
+node_modules/
+npm-debug.log
+build/
+dist/
+
+# Docker / Volumes
+*.log
+*.pid
+*.seed
+*.pid.lock
+volumes/
+data/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets (IMPORTANT: never commit these)
+.env
+*.pem
+*.key
+*.crt
+
+# Large files (GitHub has a 100MB limit)
+*.iso
+*.tar
+*.gz
+*.zip

@@ -1,0 +1,8 @@
+version: '3.8'
+services:
+  # Vulnerable app will go here 
+  vuln-app:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+EOF 
