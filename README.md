@@ -10,11 +10,14 @@ Building base Docker containers with vulnerable applications.
 Project started: $(date +"2026-07-20")
 EOF
 
+## Tool choice 
+- when initilaising the first vulnerable app, I used DVWA (Damn Vulnerable Web Application), which  is a deliberately insecure web application designed for learning and practicing web security in a safe, controlled environment.
+
 ## Installation Requirements (Who needs to install what?)
 
 This platform is a **web-based application**. 
 - **End-Users (Employees doing training)**: **NOTHING**. They only need a modern web browser (Chrome, Firefox, Edge) and the internal company URL.
-- **Developers (Me)**: Docker Desktop, Python, Node.js, Git.
+- **Developers (Me)**: Docker Desktop (https://www.docker.com/products/docker-desktop/), Python, Node.js, Git.
 - **Production Server (IT/DevOps)**: Docker Engine, Docker Compose, PostgreSQL, and Ollama (AI).
 
 ---
