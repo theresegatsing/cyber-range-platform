@@ -68,3 +68,70 @@ From the root directory, run the following command:
 ```bash 
 pip install -r requirements.txt
 ```
+
+
+### why backend fast api
+to automatically start the container , end it and get the status
+
+---
+
+## Phase 2: FastAPI Backend (The "Brain")
+
+### Why This Matters
+
+The backend API is the **core controller** of the entire platform. It acts as the bridge between the user interface (frontend) and the Docker containers.
+
+| What It Does | Why It's Important |
+|--------------|---------------------|
+| **Starts containers** | When a learner clicks "Start Mission," the API triggers Docker. |
+| **Stops containers** | Prevents unused containers from wasting server resources. |
+| **Checks container status** | Lets the frontend display "Running" or "Stopped" to the user. |
+| **Future features** | Will handle user authentication, logging, and report generation. |
+
+---
+
+### How to Run the Backend Server
+
+**Important:** Run this from the `backend/` folder.
+
+```bash
+cd C:\Users\gatsi\github\cyber-range-platform\backend
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+---
+
+## Phase 1 Summary: Vulnerable App + SQL Injection Exploit
+
+### What We Built
+
+We built a **custom vulnerable web application** using Python Flask that contains a deliberate SQL injection vulnerability. This serves as the "training target" for the Red Team phase.
+
+### Why We Built It Ourselves
+
+| Problem with Pre-built Images | Our Custom Solution |
+|-------------------------------|----------------------|
+| Required login, CSRF tokens, and sessions | **No authentication required** – just a direct URL. |
+| Apache/PHP configuration nightmares | **Pure Python** – runs reliably in a container. |
+| Unknown URL structures (404 errors) | **Single known endpoint** – `/vuln`. |
+| Bloated UIs with 50+ lessons | **Minimal UI** – just returns raw database data. |
+| Session handling was broken | **Stateless** – no sessions to break. |
+
+### How to Get the Vulnerable App Running
+
+**Step 1: Build the Docker image**
+```bash
+docker build -t custom-vuln-app ./containers
+```
+---
+
+## Phase 2 Progress: FastAPI Backend (Container Control)
+
+We built a FastAPI backend that acts as the "remote control" for the vulnerable container.
+
+### Testing the API (From the Backend Directory)
+
+While the FastAPI server was running (in the `backend/` directory), we successfully tested the container control using PowerShell:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/container/start" -Method POST
