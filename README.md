@@ -60,3 +60,11 @@ The script `scripts/exploit_sqli.py` automatically sends the exploit payload and
 **Run it with:**
 ```bash
 python scripts/exploit_sqli.py
+```
+
+### Downloading all dependencies
+From the root directory, run the following command:
+
+```bash 
+pip install -r requirements.txt
+```
