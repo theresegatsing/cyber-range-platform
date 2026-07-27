@@ -135,3 +135,59 @@ While the FastAPI server was running (in the `backend/` directory), we successfu
 
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:8000/container/start" -Method POST
+```
+
+---
+
+## Phase 3: Learner Interface (No More Auto-Exploit)
+
+### The Problem We Fixed
+
+Previously, the exploit was in the URL (e.g., `?id=1%20OR%201=1`). The learner just clicked a link and the attack happened automatically – **they learned nothing**.
+
+### The Solution: Active Learning
+
+Now, we have built a **web interface** (`http://localhost:8000/`) where the learner must:
+
+1. Read the mission briefing.
+2. Understand that the database stores user data.
+3. **Manually type** their SQL injection payload into an input box.
+4. Click "Exploit" to see the result.
+5. Iterate until they successfully retrieve all users.
+
+### How It Works
+
+| Component | What It Does |
+|-----------|--------------|
+| **Frontend HTML** | Served by FastAPI at `/`. Contains the input form. |
+| **`/exploit` endpoint** | Takes the learner's payload, sends it to the vulnerable app, and displays the result. |
+| **Error handling** | Shows helpful messages if the app is down or the payload fails. |
+
+### Why This Matters
+
+- **Forces critical thinking** – the learner must craft the syntax themselves.
+- **Immediate feedback** – they see the database response or an error message.
+- **Teaches SQL injection mechanics** – they learn that `1 OR 1=1` works on integers, but `1' OR '1'='1` fails on integer columns.
+
+### Testing the Learner Interface
+
+1. Make sure the container is running:  
+   `Invoke-RestMethod -Uri "http://localhost:8000/container/start" -Method POST`
+
+2. Open your browser to: `http://localhost:8000/`
+
+3. Enter a payload in the box and click "Exploit".
+
+**Example successful payload:** `1 OR 1=1`
+
+**Expected result:**
+```bash
+[(1, 'admin', 'secretpass'), (2, 'john', 'doe123')]
+```
+
+### start the docker before going to the frontend
+Run this command:
+
+```bash
+docker start custom-vuln-app
+```
