@@ -253,3 +253,38 @@ powershell -ExecutionPolicy Bypass -File scripts/setup_windows.ps1
 - Checks if Ollama is installed.
 
 - Builds and runs the vulnerable container.
+
+## AI Features (Intelligent Summarization)
+
+The AI reads the CVE description and generates **unique, professional mission briefs** for both Red Team and Blue Team phases.
+
+### How It Works
+
+| Step | What Happens |
+|------|--------------|
+| 1 | AI receives the CVE description (e.g., "OpenCTI is vulnerable to XSS..."). |
+| 2 | AI **reads and understands** the vulnerability. |
+| 3 | AI generates a **unique summary** in 1-2 sentences. |
+| 4 | Output is professional, urgent, and clear. |
+
+### Red Team Brief Example
+
+**Input Description:**
+> "OpenCTI is vulnerable to XSS in the rendering of email-message observable body data... could lead to CSRF and then large scale session theft."
+
+**AI Output:**
+> "For this mission, you will exploit a stored XSS vulnerability in OpenCTI that allows attackers to steal admin cookies through malicious email-message data. Your objective: execute the attack and capture the flag."
+
+### Blue Team Brief Example
+
+**Input Description:** Same as above.
+
+**AI Output:**
+> "Your mission is to investigate the logs from a stored XSS attack on OpenCTI. You must locate the attack traces in the logs and write a detection rule to prevent session theft."
+
+### Why This Works
+
+- **Unique**: Every brief is different based on the CVE description.
+- **Professional**: No casual greetings or passive voice.
+- **Actionable**: The learner knows exactly what to do.
+- **Scalable**: Works with any CVE description.

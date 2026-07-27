@@ -193,13 +193,19 @@ def stop_container():
 # ----------------------------------------------------------
 # PHASE 5: AI Endpoints
 # ----------------------------------------------------------
-from ai_helper import generate_mission_brief, generate_hint, grade_report, score_cve_interestingness
+from ai_helper import generate_blue_team_brief, generate_mission_brief, generate_hint, grade_report, score_cve_interestingness
 
 @app.get("/ai/brief")
 def get_mission_brief(cve_id: str, description: str, cvss_score: float):
     """Generate a mission brief for a CVE."""
     brief = generate_mission_brief(cve_id, description, cvss_score)
     return {"brief": brief}
+
+@app.get("/ai/blue_brief")
+def get_blue_team_brief(cve_id: str, description: str):
+    """Generate a Blue Team mission brief for a CVE."""
+    blue_brief = generate_blue_team_brief(cve_id, description)
+    return {"brief": blue_brief}
 
 @app.get("/ai/hint")
 def get_hint(task_name: str, current_step: str, actions: str = ""):
