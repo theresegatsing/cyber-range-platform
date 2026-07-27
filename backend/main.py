@@ -188,3 +188,34 @@ def stop_container():
         return {"message": f"Container '{CONTAINER_NAME}' stopped"}
     except docker.errors.NotFound:
         return {"message": f"Container '{CONTAINER_NAME}' does not exist"}
+
+
+# ----------------------------------------------------------
+# PHASE 5: AI Endpoints
+# ----------------------------------------------------------
+from ai_helper import generate_mission_brief, generate_hint, grade_report, score_cve_interestingness
+
+@app.get("/ai/brief")
+def get_mission_brief(cve_id: str, description: str, cvss_score: float):
+    """Generate a mission brief for a CVE."""
+    brief = generate_mission_brief(cve_id, description, cvss_score)
+    return {"brief": brief}
+
+@app.get("/ai/hint")
+def get_hint(task_name: str, current_step: str, actions: str = ""):
+    """Generate a hint for a stuck learner."""
+    action_list = actions.split(",") if actions else []
+    hint = generate_hint(task_name, current_step, action_list)
+    return {"hint": hint}
+
+@app.post("/ai/grade")
+def grade_learner_report(report: str, findings: list):
+    """Grade a learner's incident report."""
+    result = grade_report(report, findings)
+    return result
+
+@app.get("/ai/score")
+def score_cve(cve_id: str, description: str, cvss_score: float, kev_status: bool = False):
+    """Score how interesting a CVE is for training."""
+    score = score_cve_interestingness(cve_id, description, cvss_score, kev_status)
+    return {"cve": cve_id, "interestingness_score": score}

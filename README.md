@@ -191,3 +191,65 @@ Run this command:
 ```bash
 docker start custom-vuln-app
 ```
+
+---
+
+## Installation Guide
+
+### One-Command Setup
+
+We provide automated setup scripts for both Windows (development) and Ubuntu (production).
+
+#### For Ubuntu (Production Server)
+
+```bash
+# Clone the repository
+git clone https://github.com/YOUR_USERNAME/cyber-range-platform.git
+cd cyber-range-platform
+
+# Make the script executable and run it
+chmod +x scripts/install_ubuntu.sh
+./scripts/install_ubuntu.sh
+```
+
+##### What the script does:
+
+- Updates system packages.
+
+- Installs Docker and Docker Compose.
+
+- Installs Python 3 and pip.
+
+- Installs Ollama.
+
+- Pulls the Phi-3-mini AI model.
+
+- Installs Python dependencies.
+
+- Builds and runs the vulnerable container.
+
+#### For Windows (Development)
+
+```bash
+# Open PowerShell as Administrator and run:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Clone the repository
+git clone https://github.com/YOUR_USERNAME/cyber-range-platform.git
+cd cyber-range-platform
+
+# Run the setup script
+powershell -ExecutionPolicy Bypass -File scripts/setup_windows.ps1
+```
+
+##### What the script does:
+
+- Checks if Docker is installed.
+
+- Checks if Python is installed.
+
+- Installs Python dependencies.
+
+- Checks if Ollama is installed.
+
+- Builds and runs the vulnerable container.

@@ -1,8 +1,16 @@
 version: '3.8'
+
 services:
-  # Vulnerable app will go here 
   vuln-app:
-    image: nginx:alpine
+    image: custom-vuln-app
     ports:
       - "8080:80"
-EOF 
+    logging:
+      driver: "splunk"
+      options:
+        splunk-token: "YOUR_HEC_TOKEN_HERE"
+        splunk-url: "https://YOUR_SPLUNK_INSTANCE:8088"
+        splunk-insecureskipverify: "true" # Set to "false" in production
+        splunk-sourcetype: "container"
+        splunk-index: "training"
+        tag: "{{.ImageName}}/{{.Name}}"
