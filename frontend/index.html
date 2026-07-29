@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cyber Range Platform</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        .header { background: #1a2a3a; color: white; padding: 20px 0; border-radius: 8px; margin-bottom: 30px; }
+        .header h1 { font-size: 28px; font-weight: 300; text-align: center; }
+        .header h1 span { color: #00aaff; font-weight: 600; }
+        
+        .admin-bar {
+            background: #e8f0fe;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            border: 1px solid #c5d8f0;
+        }
+        .admin-bar .label { font-weight: 600; color: #1a2a3a; font-size: 14px; }
+        .admin-bar .status { font-size: 13px; color: #666; }
+        .admin-bar .status .success { color: #2e7d32; }
+        .admin-bar .status .error { color: #d32f2f; }
+        
+        .missions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
+        
+        .mission-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-left: 5px solid #555;
+            cursor: pointer;
+        }
+        .mission-card:hover { transform: translateY(-4px); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+        
+        .mission-card .cve-id { font-size: 18px; font-weight: 600; color: #1a2a3a; }
+        .mission-card .severity { display: inline-block; padding: 2px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 10px; }
+        .severity-critical { background: #d32f2f; color: white; }
+        .severity-high { background: #f57c00; color: white; }
+        .severity-medium { background: #fbc02d; color: #333; }
+        .severity-low { background: #388e3c; color: white; }
+        
+        .mission-card .asset { color: #666; font-size: 14px; margin: 5px 0 10px 0; }
+        .mission-card .description { color: #555; font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
+        .mission-card .interesting-score { font-size: 13px; color: #00aaff; font-weight: 600; }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary { background: #00aaff; color: white; }
+        .btn-primary:hover { background: #0088dd; }
+        .btn-primary:disabled { background: #88ccdd; cursor: not-allowed; }
+        
+        .btn-success { background: #2e7d32; color: white; }
+        .btn-success:hover { background: #1b5e20; }
+        .btn-secondary { background: #666; color: white; }
+        .btn-secondary:hover { background: #444; }
+        .btn-warning { background: #f57c00; color: white; }
+        .btn-warning:hover { background: #e65100; }
+        
+        .mission-detail {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+        .mission-detail h2 { color: #1a2a3a; margin-bottom: 10px; }
+        .mission-detail .brief-box {
+            background: #f5f7fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #00aaff;
+        }
+        .mission-detail .brief-box.blue { border-left-color: #ff6b00; }
+        
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .error { color: #d32f2f; background: #ffebee; padding: 15px; border-radius: 8px; margin: 20px 0; }
+        .back-btn { margin-top: 20px; }
+        
+        @media (max-width: 600px) {
+            .missions-grid { grid-template-columns: 1fr; }
+            .admin-bar { flex-direction: column; align-items: stretch; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 <span>Cyber Range</span> Platform</h1>
+        </div>
+        
+        <div class="admin-bar" id="admin-bar">
+            <div>
+                <span class="label">⚙️ Admin Controls</span>
+                <span class="status" id="import-status">Ready</span>
+            </div>
+            <div>
+                <button class="btn btn-warning" id="import-btn" onclick="runImport()">
+                    📥 Run Scanner Import
+                </button>
+            </div>
+        </div>
+        
+        <div id="app">
+            <div id="loading" class="loading">⏳ Loading vulnerabilities...</div>
+            <div id="error" class="error" style="display:none;"></div>
+            
+            <div id="missions-container" style="display:none;">
+                <h2 style="margin-bottom:20px;">Top Interesting Vulnerabilities</h2>
+                <p style="color:#666; margin-bottom:20px;">Click "Start Mission" to generate AI briefs and launch the vulnerable environment.</p>
+                <div id="missions-grid" class="missions-grid"></div>
+            </div>
+            
+            <div id="mission-detail" style="display:none;"></div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        
+        document.addEventListener('DOMContentLoaded', loadVulnerabilities);
+        
+        function loadVulnerabilities() {
+            const loading = document.getElementById('loading');
+            const errorDiv = document.getElementById('error');
+            const container = document.getElementById('missions-container');
+            const grid = document.getElementById('missions-grid');
+            
+            loading.style.display = 'block';
+            errorDiv.style.display = 'none';
+            container.style.display = 'none';
+            
+            fetch(`${API_BASE}/vulnerabilities/top?limit=10`)
+                .then(res => res.json())
+                .then(data => {
+                    loading.style.display = 'none';
+                    
+                    if (data.error) {
+                        errorDiv.textContent = 'Error: ' + data.error;
+                        errorDiv.style.display = 'block';
+                        return;
+                    }
+                    
+                    if (!data.vulnerabilities || data.vulnerabilities.length === 0) {
+                        errorDiv.innerHTML = 'No vulnerabilities available. Click "Run Scanner Import" to fetch vulnerabilities from the scanner database.';
+                        errorDiv.style.display = 'block';
+                        return;
+                    }
+                    
+                    container.style.display = 'block';
+                    grid.innerHTML = '';
+                    
+                    data.vulnerabilities.forEach(vuln => {
+                        const card = createVulnerabilityCard(vuln);
+                        grid.appendChild(card);
+                    });
+                })
+                .catch(err => {
+                    loading.style.display = 'none';
+                    errorDiv.textContent = 'Failed to load vulnerabilities: ' + err.message;
+                    errorDiv.style.display = 'block';
+                });
+        }
+        
+        function createVulnerabilityCard(vuln) {
+            const div = document.createElement('div');
+            div.className = 'mission-card';
+            
+            const severityClass = vuln.severity ? vuln.severity.toLowerCase() : 'medium';
+            
+            div.innerHTML = `
+                <div>
+                    <span class="cve-id">${vuln.cve_id || 'Unknown CVE'}</span>
+                    <span class="severity severity-${severityClass}">${vuln.severity || 'Unknown'}</span>
+                </div>
+                <div class="asset">📦 ${vuln.asset || 'Unknown Asset'}</div>
+                <div class="description">${vuln.description ? vuln.description.substring(0, 120) + '...' : 'No description available.'}</div>
+                <div class="interesting-score">⭐ Interestingness Score: ${vuln.interestingness_score || '?'}/10</div>
+                <br>
+                <button class="btn btn-primary" onclick="startMission(${vuln.id})">
+                    🚀 Start Mission
+                </button>
+            `;
+            
+            return div;
+        }
+        
+        function runImport() {
+            const btn = document.getElementById('import-btn');
+            const statusDiv = document.getElementById('import-status');
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Importing...';
+            statusDiv.innerHTML = '<span style="color:#f57c00;">⏳ Running import... This may take a few minutes.</span>';
+            
+            const errorDiv = document.getElementById('error');
+            errorDiv.style.display = 'block';
+            errorDiv.style.background = '#fff3e0';
+            errorDiv.style.color = '#e65100';
+            errorDiv.textContent = '⏳ Importing vulnerabilities from scanner database... Please wait.';
+            
+            fetch(`${API_BASE}/admin/import`, {
+                method: 'POST'
+            })
+            .then(res => res.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = '📥 Run Scanner Import';
+                
+                if (data.status === 'success') {
+                    statusDiv.innerHTML = '<span style="color:#2e7d32;">✅ Import completed successfully!</span>';
+                    errorDiv.style.display = 'none';
+                    setTimeout(loadVulnerabilities, 2000);
+                } else {
+                    statusDiv.innerHTML = `<span style="color:#d32f2f;">❌ Import failed: ${data.message || 'Unknown error'}</span>`;
+                    errorDiv.style.background = '#ffebee';
+                    errorDiv.style.color = '#d32f2f';
+                    errorDiv.textContent = '❌ Import failed: ' + (data.message || data.error || 'Unknown error');
+                    errorDiv.style.display = 'block';
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.textContent = '📥 Run Scanner Import';
+                statusDiv.innerHTML = `<span style="color:#d32f2f;">❌ Error: ${err.message}</span>`;
+                errorDiv.style.background = '#ffebee';
+                errorDiv.style.color = '#d32f2f';
+                errorDiv.textContent = '❌ Failed to run import: ' + err.message;
+                errorDiv.style.display = 'block';
+            });
+        }
+        
+        function startMission(vulnerabilityId) {
+            const detailDiv = document.getElementById('mission-detail');
+            const grid = document.getElementById('missions-container');
+            
+            detailDiv.style.display = 'block';
+            detailDiv.innerHTML = '<div class="loading">⏳ Starting mission... Generating AI briefs and spinning up container...</div>';
+            grid.style.display = 'none';
+            
+            fetch(`${API_BASE}/missions/${vulnerabilityId}/start`, {
+                method: 'POST'
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    detailDiv.innerHTML = `
+                        <div class="error">❌ Error: ${data.error}</div>
+                        <button class="btn btn-secondary back-btn" onclick="backToVulnerabilities()">← Back</button>
+                    `;
+                    return;
+                }
+                
+                detailDiv.innerHTML = `
+                    <div class="mission-detail">
+                        <h2>📋 Mission: ${data.cve_id}</h2>
+                        <p><strong>Container:</strong> ${data.container_name} (Port: ${data.container_port})</p>
+                        <p><strong>App URL:</strong> <a href="${data.app_url}" target="_blank">${data.app_url}</a></p>
+                        
+                        <h3 style="margin-top:20px;">🔴 Red Team Brief</h3>
+                        <div class="brief-box">${data.red_team_brief || 'No brief available.'}</div>
+                        
+                        <h3 style="margin-top:20px;">🔵 Blue Team Brief</h3>
+                        <div class="brief-box blue">${data.blue_team_brief || 'No brief available.'}</div>
+                        
+                        <div style="margin-top:20px;">
+                            <button class="btn btn-success" onclick="window.open('${data.app_url}', '_blank')">
+                                🎯 Open Vulnerable App
+                            </button>
+                            <button class="btn btn-secondary" onclick="backToVulnerabilities()" style="margin-left:10px;">
+                                ← Back
+                            </button>
+                        </div>
+                    </div>
+                `;
+            })
+            .catch(err => {
+                detailDiv.innerHTML = `
+                    <div class="error">❌ Failed to start mission: ${err.message}</div>
+                    <button class="btn btn-secondary back-btn" onclick="backToVulnerabilities()">← Back</button>
+                `;
+            });
+        }
+        
+        function backToVulnerabilities() {
+            document.getElementById('mission-detail').style.display = 'none';
+            document.getElementById('missions-container').style.display = 'block';
+            loadVulnerabilities();
+        }
+    </script>
+</body>
+</html>

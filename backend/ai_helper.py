@@ -153,9 +153,10 @@ Return ONLY JSON in this exact format:
 # ----------------------------------------------------------
 # AI FEATURE 5: CVE Interestingness Score
 # ----------------------------------------------------------
-def score_cve_interestingness(cve_id: str, description: str, cvss_score: float, kev_status: bool) -> int:
+
+def score_cve_interestingness(cve_id: str, description: str, cvss_score: float, is_kev: bool) -> int:
     """Score a CVE from 1-10 on how interesting it is for training."""
-    kev_text = "Yes, this is actively exploited" if kev_status else "No, not on KEV list"
+    kev_text = "Yes, this is actively exploited" if is_kev else "No, not on KEV list"
     
     prompt = f"""
 You are a cybersecurity trainer choosing which vulnerabilities to turn into training missions.
