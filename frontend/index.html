@@ -6,15 +6,15 @@
     <title>Cyber Range Platform</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; color: #333; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0e17; color: #e0e0e0; }
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         
-        .header { background: #1a2a3a; color: white; padding: 20px 0; border-radius: 8px; margin-bottom: 30px; }
+        .header { background: linear-gradient(135deg, #0d1b2a, #1b3a5c); color: white; padding: 20px 0; border-radius: 8px; margin-bottom: 30px; border: 1px solid #2a4a6a; }
         .header h1 { font-size: 28px; font-weight: 300; text-align: center; }
-        .header h1 span { color: #00aaff; font-weight: 600; }
+        .header h1 span { color: #00d4ff; font-weight: 600; }
         
         .admin-bar {
-            background: #e8f0fe;
+            background: #111927;
             border-radius: 8px;
             padding: 15px 20px;
             margin-bottom: 20px;
@@ -23,36 +23,34 @@
             align-items: center;
             flex-wrap: wrap;
             gap: 10px;
-            border: 1px solid #c5d8f0;
+            border: 1px solid #1a2a3a;
         }
-        .admin-bar .label { font-weight: 600; color: #1a2a3a; font-size: 14px; }
-        .admin-bar .status { font-size: 13px; color: #666; }
-        .admin-bar .status .success { color: #2e7d32; }
-        .admin-bar .status .error { color: #d32f2f; }
+        .admin-bar .label { font-weight: 600; color: #8ab4f8; font-size: 14px; }
+        .admin-bar .status { font-size: 13px; color: #8899aa; }
+        .admin-bar .status .success { color: #4caf50; }
+        .admin-bar .status .error { color: #f44336; }
         
         .missions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
         
         .mission-card {
-            background: white;
+            background: #111927;
             border-radius: 10px;
             padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            transition: transform 0.2s, box-shadow 0.2s;
-            border-left: 5px solid #555;
-            cursor: pointer;
+            border: 1px solid #1a2a3a;
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
         }
-        .mission-card:hover { transform: translateY(-4px); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+        .mission-card:hover { transform: translateY(-4px); border-color: #00d4ff; box-shadow: 0 0 20px rgba(0,212,255,0.1); }
         
-        .mission-card .cve-id { font-size: 18px; font-weight: 600; color: #1a2a3a; }
+        .mission-card .cve-id { font-size: 18px; font-weight: 600; color: #e0e0e0; }
         .mission-card .severity { display: inline-block; padding: 2px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 10px; }
         .severity-critical { background: #d32f2f; color: white; }
         .severity-high { background: #f57c00; color: white; }
-        .severity-medium { background: #fbc02d; color: #333; }
+        .severity-medium { background: #fbc02d; color: #111; }
         .severity-low { background: #388e3c; color: white; }
         
-        .mission-card .asset { color: #666; font-size: 14px; margin: 5px 0 10px 0; }
-        .mission-card .description { color: #555; font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
-        .mission-card .interesting-score { font-size: 13px; color: #00aaff; font-weight: 600; }
+        .mission-card .asset { color: #8899aa; font-size: 14px; margin: 5px 0 10px 0; }
+        .mission-card .description { color: #b0b8c8; font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
+        .mission-card .interesting-score { font-size: 13px; color: #00d4ff; font-weight: 600; }
         
         .btn {
             padding: 10px 20px;
@@ -60,46 +58,119 @@
             border-radius: 6px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: background 0.2s, opacity 0.2s;
             font-size: 14px;
             text-decoration: none;
             display: inline-block;
         }
-        .btn-primary { background: #00aaff; color: white; }
-        .btn-primary:hover { background: #0088dd; }
-        .btn-primary:disabled { background: #88ccdd; cursor: not-allowed; }
+        .btn-primary { background: #00d4ff; color: #0a0e17; }
+        .btn-primary:hover { background: #00b8e6; }
+        .btn-primary:disabled { background: #004466; cursor: not-allowed; color: #8899aa; }
         
-        .btn-success { background: #2e7d32; color: white; }
-        .btn-success:hover { background: #1b5e20; }
-        .btn-secondary { background: #666; color: white; }
-        .btn-secondary:hover { background: #444; }
         .btn-warning { background: #f57c00; color: white; }
         .btn-warning:hover { background: #e65100; }
+        .btn-secondary { background: #1a2a3a; color: #8899aa; }
+        .btn-secondary:hover { background: #2a4a5a; }
         
-        .mission-detail {
-            background: white;
-            border-radius: 10px;
-            padding: 30px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin-top: 20px;
+        .loading { text-align: center; padding: 40px; color: #8899aa; }
+        .error { color: #f44336; background: #1a0a0a; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #3a1a1a; }
+        
+        /* Mission Modal - Dark Theme */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(8px);
         }
-        .mission-detail h2 { color: #1a2a3a; margin-bottom: 10px; }
-        .mission-detail .brief-box {
-            background: #f5f7fa;
-            padding: 15px;
+        .modal-content {
+            background: linear-gradient(145deg, #0d1b2a, #1a2a3a);
+            padding: 40px;
+            border-radius: 16px;
+            max-width: 650px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 1px solid #2a4a6a;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+        }
+        .modal-content h2 { 
+            color: #00d4ff; 
+            margin-bottom: 15px; 
+            font-weight: 300;
+            letter-spacing: 1px;
+            border-bottom: 1px solid #1a3a4a;
+            padding-bottom: 10px;
+        }
+        .modal-content .brief-box {
+            background: #0a1620;
+            padding: 20px;
             border-radius: 8px;
-            margin: 10px 0;
-            border-left: 4px solid #00aaff;
+            margin: 15px 0;
+            border-left: 4px solid #00d4ff;
+            color: #c0d0e0;
+            line-height: 1.6;
         }
-        .mission-detail .brief-box.blue { border-left-color: #ff6b00; }
+        .modal-content .brief-box.blue { 
+            border-left-color: #ff6b00;
+            display: none;
+        }
+        .modal-content .mission-status {
+            color: #00d4ff;
+            font-size: 14px;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .modal-content .mission-status .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #0a2a3a;
+            border-top-color: #00d4ff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
         
-        .loading { text-align: center; padding: 40px; color: #666; }
-        .error { color: #d32f2f; background: #ffebee; padding: 15px; border-radius: 8px; margin: 20px 0; }
-        .back-btn { margin-top: 20px; }
+        .modal-content .close-btn {
+            margin-top: 20px;
+            background: #00d4ff;
+            color: #0a0e17;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 15px;
+            transition: background 0.2s;
+            width: 100%;
+        }
+        .modal-content .close-btn:hover { background: #00b8e6; }
+        .modal-content .close-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .modal-content .brief-label {
+            color: #8899aa;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 15px;
+        }
         
         @media (max-width: 600px) {
             .missions-grid { grid-template-columns: 1fr; }
             .admin-bar { flex-direction: column; align-items: stretch; }
+            .modal-content { padding: 25px; }
         }
     </style>
 </head>
@@ -109,7 +180,7 @@
             <h1>🔐 <span>Cyber Range</span> Platform</h1>
         </div>
         
-        <div class="admin-bar" id="admin-bar">
+        <div class="admin-bar">
             <div>
                 <span class="label">⚙️ Admin Controls</span>
                 <span class="status" id="import-status">Ready</span>
@@ -126,17 +197,31 @@
             <div id="error" class="error" style="display:none;"></div>
             
             <div id="missions-container" style="display:none;">
-                <h2 style="margin-bottom:20px;">Top Interesting Vulnerabilities</h2>
-                <p style="color:#666; margin-bottom:20px;">Click "Start Mission" to generate AI briefs and launch the vulnerable environment.</p>
+                <h2 style="color: #e0e0e0; margin-bottom:20px; font-weight:300;">Top Interesting Vulnerabilities</h2>
+                <p style="color:#8899aa; margin-bottom:20px;">Select a mission to start the vulnerable environment.</p>
                 <div id="missions-grid" class="missions-grid"></div>
             </div>
-            
-            <div id="mission-detail" style="display:none;"></div>
         </div>
     </div>
     
+    <!-- Mission Modal -->
+    <div id="mission-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modal-title">📋 Loading Mission...</h2>
+            <div id="modal-status" class="mission-status">
+                <span class="spinner"></span>
+                <span id="modal-status-text">Starting mission environment...</span>
+            </div>
+            <div id="modal-red-brief" class="brief-box">Loading mission brief...</div>
+            <div id="modal-blue-brief" class="brief-box blue">🔵 Blue Team Brief will appear after you find the flag.</div>
+            <button class="close-btn" id="modal-btn" disabled>⏳ Loading...</button>
+        </div>
+    </div>
+
     <script>
         const API_BASE = 'http://localhost:8000';
+        let currentMissionData = null;
+        let missionStarted = false;
         
         document.addEventListener('DOMContentLoaded', loadVulnerabilities);
         
@@ -205,6 +290,67 @@
             return div;
         }
         
+        function startMission(id) {
+            const modal = document.getElementById('mission-modal');
+            const title = document.getElementById('modal-title');
+            const statusText = document.getElementById('modal-status-text');
+            const redBrief = document.getElementById('modal-red-brief');
+            const blueBrief = document.getElementById('modal-blue-brief');
+            const btn = document.getElementById('modal-btn');
+            
+            // Reset and show modal
+            modal.style.display = 'flex';
+            title.textContent = '📋 Loading Mission...';
+            statusText.textContent = 'Starting mission environment...';
+            redBrief.textContent = '⏳ Generating mission brief...';
+            blueBrief.style.display = 'none';
+            btn.textContent = '⏳ Loading...';
+            btn.disabled = true;
+            
+            fetch(`${API_BASE}/missions/${id}/start`, {
+                method: 'POST'
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    redBrief.textContent = '❌ Error: ' + data.error;
+                    title.textContent = '❌ Mission Failed';
+                    statusText.textContent = 'Error starting mission';
+                    btn.textContent = 'Close';
+                    btn.disabled = false;
+                    btn.onclick = function() { closeModal(); };
+                    return;
+                }
+                
+                currentMissionData = data;
+                title.textContent = `📋 Mission: ${data.cve_id}`;
+                statusText.textContent = '✅ Mission ready!';
+                redBrief.textContent = data.red_team_brief || 'No brief available.';
+                blueBrief.style.display = 'none';
+                
+                // Enable the button to open the app
+                btn.textContent = '🎯 Enter Vulnerable Environment';
+                btn.disabled = false;
+                btn.onclick = function() {
+                    // Open the vulnerable app in a new tab
+                    window.open(data.app_url || 'http://localhost:8080/', '_blank');
+                    closeModal();
+                };
+            })
+            .catch(err => {
+                redBrief.textContent = '❌ Failed to start mission: ' + err.message;
+                title.textContent = '❌ Error';
+                statusText.textContent = 'Error';
+                btn.textContent = 'Close';
+                btn.disabled = false;
+                btn.onclick = function() { closeModal(); };
+            });
+        }
+        
+        function closeModal() {
+            document.getElementById('mission-modal').style.display = 'none';
+        }
+        
         function runImport() {
             const btn = document.getElementById('import-btn');
             const statusDiv = document.getElementById('import-status');
@@ -215,8 +361,8 @@
             
             const errorDiv = document.getElementById('error');
             errorDiv.style.display = 'block';
-            errorDiv.style.background = '#fff3e0';
-            errorDiv.style.color = '#e65100';
+            errorDiv.style.background = '#1a1a0a';
+            errorDiv.style.color = '#f57c00';
             errorDiv.textContent = '⏳ Importing vulnerabilities from scanner database... Please wait.';
             
             fetch(`${API_BASE}/admin/import`, {
@@ -228,13 +374,13 @@
                 btn.textContent = '📥 Run Scanner Import';
                 
                 if (data.status === 'success') {
-                    statusDiv.innerHTML = '<span style="color:#2e7d32;">✅ Import completed successfully!</span>';
+                    statusDiv.innerHTML = '<span style="color:#4caf50;">✅ Import completed successfully!</span>';
                     errorDiv.style.display = 'none';
                     setTimeout(loadVulnerabilities, 2000);
                 } else {
-                    statusDiv.innerHTML = `<span style="color:#d32f2f;">❌ Import failed: ${data.message || 'Unknown error'}</span>`;
-                    errorDiv.style.background = '#ffebee';
-                    errorDiv.style.color = '#d32f2f';
+                    statusDiv.innerHTML = `<span style="color:#f44336;">❌ Import failed: ${data.message || 'Unknown error'}</span>`;
+                    errorDiv.style.background = '#1a0a0a';
+                    errorDiv.style.color = '#f44336';
                     errorDiv.textContent = '❌ Import failed: ' + (data.message || data.error || 'Unknown error');
                     errorDiv.style.display = 'block';
                 }
@@ -242,70 +388,12 @@
             .catch(err => {
                 btn.disabled = false;
                 btn.textContent = '📥 Run Scanner Import';
-                statusDiv.innerHTML = `<span style="color:#d32f2f;">❌ Error: ${err.message}</span>`;
-                errorDiv.style.background = '#ffebee';
-                errorDiv.style.color = '#d32f2f';
+                statusDiv.innerHTML = `<span style="color:#f44336;">❌ Error: ${err.message}</span>`;
+                errorDiv.style.background = '#1a0a0a';
+                errorDiv.style.color = '#f44336';
                 errorDiv.textContent = '❌ Failed to run import: ' + err.message;
                 errorDiv.style.display = 'block';
             });
-        }
-        
-        function startMission(vulnerabilityId) {
-            const detailDiv = document.getElementById('mission-detail');
-            const grid = document.getElementById('missions-container');
-            
-            detailDiv.style.display = 'block';
-            detailDiv.innerHTML = '<div class="loading">⏳ Starting mission... Generating AI briefs and spinning up container...</div>';
-            grid.style.display = 'none';
-            
-            fetch(`${API_BASE}/missions/${vulnerabilityId}/start`, {
-                method: 'POST'
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) {
-                    detailDiv.innerHTML = `
-                        <div class="error">❌ Error: ${data.error}</div>
-                        <button class="btn btn-secondary back-btn" onclick="backToVulnerabilities()">← Back</button>
-                    `;
-                    return;
-                }
-                
-                detailDiv.innerHTML = `
-                    <div class="mission-detail">
-                        <h2>📋 Mission: ${data.cve_id}</h2>
-                        <p><strong>Container:</strong> ${data.container_name} (Port: ${data.container_port})</p>
-                        <p><strong>App URL:</strong> <a href="${data.app_url}" target="_blank">${data.app_url}</a></p>
-                        
-                        <h3 style="margin-top:20px;">🔴 Red Team Brief</h3>
-                        <div class="brief-box">${data.red_team_brief || 'No brief available.'}</div>
-                        
-                        <h3 style="margin-top:20px;">🔵 Blue Team Brief</h3>
-                        <div class="brief-box blue">${data.blue_team_brief || 'No brief available.'}</div>
-                        
-                        <div style="margin-top:20px;">
-                            <button class="btn btn-success" onclick="window.open('${data.app_url}', '_blank')">
-                                🎯 Open Vulnerable App
-                            </button>
-                            <button class="btn btn-secondary" onclick="backToVulnerabilities()" style="margin-left:10px;">
-                                ← Back
-                            </button>
-                        </div>
-                    </div>
-                `;
-            })
-            .catch(err => {
-                detailDiv.innerHTML = `
-                    <div class="error">❌ Failed to start mission: ${err.message}</div>
-                    <button class="btn btn-secondary back-btn" onclick="backToVulnerabilities()">← Back</button>
-                `;
-            });
-        }
-        
-        function backToVulnerabilities() {
-            document.getElementById('mission-detail').style.display = 'none';
-            document.getElementById('missions-container').style.display = 'block';
-            loadVulnerabilities();
         }
     </script>
 </body>

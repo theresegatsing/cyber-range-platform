@@ -421,3 +421,38 @@ def get_top_vulnerabilities(limit: int = 10):
         return {"vulnerabilities": [dict(v) for v in top]}
     except Exception as e:
         return {"error": str(e)}
+
+    
+
+@app.post("/missions/{vulnerability_id}/flag")
+def submit_flag(vulnerability_id: int, flag: str):
+    """
+    Submit a flag for a mission.
+    If correct, return success and reveal the Blue Team brief.
+    """
+    try:
+        from database import get_platform_connection
+        
+        # Get the mission
+        conn = get_platform_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        cursor.execute("SELECT * FROM missions WHERE vulnerability_id = %s AND status = 'active'", (vulnerability_id,))
+        mission = cursor.fetchone()
+        
+        if not mission:
+            conn.close()
+            return {"error": "Mission not found"}
+        
+        # Check if the flag is correct
+        if flag and flag.strip() == "FLAG-FOUND":
+            # Reveal Blue Team brief
+            return {
+                "status": "success",
+                "blue_team_brief": mission["blue_team_brief"]
+            }
+        else:
+            return {"status": "error", "message": "Incorrect flag. Try again!"}
+            
+    except Exception as e:
+        return {"error": str(e)}
