@@ -1012,7 +1012,7 @@
             });
             document.getElementById('mission-step').textContent = 'Step ' + (step+1) + ' of ' + tasks.length;
             
-            // If we're at Step 3 (Submit Final Report), show the report template
+            // If we're at Step 3 (Submit Final Report), clear right panel and show report
             if (step === 3) {
                 // Hide Blue Team section
                 var blueSection = document.getElementById('blue-team-section');
@@ -1020,6 +1020,13 @@
                 document.getElementById('blue-brief-text').textContent = '';
                 document.getElementById('rule-input').value = '';
                 document.getElementById('rule-result').textContent = '';
+                
+                // CLEAR the right panel (Help section)
+                var helpBrief = document.getElementById('help-brief');
+                var helpHint = document.getElementById('help-hint');
+                
+                helpBrief.textContent = '';
+                helpHint.innerHTML = '';
                 
                 // Show report template
                 showReportTemplate();
