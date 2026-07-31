@@ -16,20 +16,22 @@ def init_db():
 
 @app.route('/')
 def home():
-    # Auto-redirect to the vulnerable endpoint with a default id
+    # Auto-redirect to the vulnerable endpoint with id=1
     return redirect('/vuln?id=1')
 
 @app.route('/vuln')
 def vuln():
     user_id = request.args.get('id')
     
+    # If no id provided, redirect to id=1
     if user_id is None:
-        return "Please provide an id parameter, e.g., ?id=1"
+        return redirect('/vuln?id=1')
     
     try:
         conn = sqlite3.connect('database.db')
         cursor = conn.cursor()
         
+        # ⚠️ SQL INJECTION VULNERABILITY
         query = f"SELECT * FROM users WHERE id = {user_id}"
         cursor.execute(query)
         data = cursor.fetchall()

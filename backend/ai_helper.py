@@ -6,7 +6,6 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "phi3:mini"
 
 def query_ollama(prompt: str) -> str:
-    """Send a prompt to Ollama and get the response."""
     try:
         response = requests.post(
             OLLAMA_URL,
@@ -22,12 +21,11 @@ def query_ollama(prompt: str) -> str:
         return f"Error: Could not reach Ollama. Make sure it's running. Details: {str(e)}"
 
 # ----------------------------------------------------------
-# AI FEATURE 1: Red Team Mission Brief (SMART SUMMARIZATION)
+# AI FEATURE 1: Red Team Mission Brief
 # ----------------------------------------------------------
-def generate_mission_brief(cve_id: str, description: str, cvss_score: float) -> str:
+def generate_mission_brief(cve_id: str, description: str, cvss_score: float, asset: str = "the application") -> str:
     """Generate a Red Team mission brief by summarizing the CVE description."""
-    
-    # Calculate severity label
+
     if cvss_score >= 9.0:
         severity = "CRITICAL"
     elif cvss_score >= 7.0:
@@ -36,24 +34,36 @@ def generate_mission_brief(cve_id: str, description: str, cvss_score: float) -> 
         severity = "MEDIUM"
     else:
         severity = "LOW"
-    
+
     prompt = f"""
-You are a professional cybersecurity trainer writing a mission brief for a Red Team exercise.
+You are a professional cybersecurity trainer writing a MISSION BRIEF for a Red Team exercise.
 
-Read the vulnerability description below and summarize it into ONE clear, professional sentence that:
-1. Explains what the vulnerability is.
-2. States the objective (what the learner needs to do).
-3. Does NOT mention the CVE number.
-4. Does NOT just repeat the description word-for-word.
-5. Sounds professional and urgent but not casual.
+Write a single paragraph that naturally integrates:
+1. What the vulnerability is (based on the description)
+2. What the attacker can do (impact)
+3. Your objective (what the learner needs to achieve)
 
-Vulnerability Description:
-{description}
+DO NOT:
+- Mention the CVE number
+- Use casual language
+- Write as instructions
+- Copy the description word-for-word
+- Put the asset name in a separate sentence
+- Do not have more than 4 phrases in the whole mission brief
+- Avoid making it dramatic for nothing
 
+DO:
+- Write in second person for the vulnerability description
+- Use "Your objective" for the mission goal
+- Be specific about the impact
+- Integrate everything into one flowing paragraph of 4 phrases
+
+Vulnerability Description: {description}
+Asset: {asset}
 CVSS Severity: {severity}
 
-Example of a good brief (DO NOT COPY THIS – use it only as a style guide):
-"For this mission, you will exploit a stored XSS vulnerability in OpenCTI that allows attackers to steal admin cookies through malicious email-message data. Your objective: execute the attack and capture the flag."
+Example format (DO NOT COPY – use as style guide):
+"The vulnerability resides in the datamodel-code-generator tool, where GraphQL Union description values can inject arbitrary Python code into generated models. Successful exploitation enables attackers to execute malicious code when the models are imported, leading to information exfiltration, credential dumping, and lateral movement across the network. Your objective: exploit the vulnerability to capture the flag."
 
 Now generate a UNIQUE mission brief for this vulnerability:
 
@@ -62,59 +72,49 @@ Mission Brief:
     return query_ollama(prompt)
 
 # ----------------------------------------------------------
-# AI FEATURE 2: Blue Team Brief (SMART SUMMARIZATION)
+# AI FEATURE 2: Blue Team Brief
 # ----------------------------------------------------------
 def generate_blue_team_brief(cve_id: str, description: str) -> str:
     """Generate a Blue Team mission brief by summarizing the CVE description."""
     
     prompt = f"""
-You are a professional cybersecurity trainer writing a mission brief for a Blue Team exercise.
+You are a professional cybersecurity trainer writing a Blue Team mission brief.
 
-Read the vulnerability description below and summarize it into ONE clear, professional sentence that:
-1. Explains what the vulnerability is.
-2. States the Blue Team objective (investigate logs, find traces, write a rule).
-3. Does NOT mention the CVE number.
-4. Does NOT just repeat the description word-for-word.
-5. Sounds professional and clear.
+Write a single sentence that:
+1. Explains what the vulnerability is
+2. States the Blue Team objective (investigate logs, find traces, write a rule)
 
-Vulnerability Description:
-{description}
+Vulnerability Description: {description}
 
-Example of a good brief (DO NOT COPY THIS – use it only as a style guide):
-"Your mission is to investigate the logs from a stored XSS attack on OpenCTI. You must locate the attack traces in the logs and write a detection rule to prevent session theft."
-
-Now generate a UNIQUE Blue Team mission brief for this vulnerability:
+Example format (DO NOT COPY):
+"Investigate the logs from the stored XSS attack on OpenCTI. Locate the attack traces and write a detection rule to prevent session theft."
 
 Blue Team Brief:
 """
     return query_ollama(prompt)
 
 # ----------------------------------------------------------
-# AI FEATURE 3: Smart Hint (TEMPLATE-BASED)
+# AI FEATURE 3: Smart Hint (FIXED - Uses CVE Description)
 # ----------------------------------------------------------
-def generate_hint(task_name: str, current_step: str, user_actions: list) -> str:
-    """Generate a hint using a strict template."""
+def generate_hint(task_name: str, current_step: str, user_actions: list, cve_description: str = "") -> str:
+    """Generate a hint based on the CVE and what the learner has tried."""
     actions_text = ", ".join(user_actions) if user_actions else "No actions recorded yet"
     
     prompt = f"""
 You are a cybersecurity instructor giving a hint to a learner.
 
-CRITICAL INSTRUCTION: You MUST follow this exact template. Fill in the blanks.
+The vulnerability is described as:
+{cve_description}
 
-TEMPLATE:
-"Next step: [Insert one specific action the learner should try next]."
+The learner is on: {task_name} (Step: {current_step})
+They have tried: {actions_text}
 
-DO NOT use phrases like "encourage", "try to", or "consider". Write in DIRECT, ACTIVE voice.
-DO NOT add any extra text, greetings, or explanations. ONLY return the completed template.
-
-Example of correct output:
-"Next step: Test different input values in the username field to identify the vulnerable parameter."
-
-Now generate the hint using the template above.
-
-Task: {task_name}
-Current Step: {current_step}
-What they've tried: {actions_text}
+Give ONE specific, actionable hint that helps them figure out what to do next.
+- Write in DIRECT, ACTIVE voice addressing the learner as "you"
+- DO NOT use "encourage", "try to", or "consider"
+- DO NOT give away the full answer
+- Make it specific to the vulnerability described above
+- Keep it under 30 words
 
 Hint:
 """
@@ -153,7 +153,6 @@ Return ONLY JSON in this exact format:
 # ----------------------------------------------------------
 # AI FEATURE 5: CVE Interestingness Score
 # ----------------------------------------------------------
-
 def score_cve_interestingness(cve_id: str, description: str, cvss_score: float, is_kev: bool) -> int:
     """Score a CVE from 1-10 on how interesting it is for training."""
     kev_text = "Yes, this is actively exploited" if is_kev else "No, not on KEV list"

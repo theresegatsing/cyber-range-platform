@@ -4,396 +4,1050 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cyber Range Platform</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0e17; color: #e0e0e0; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            color: #1a2a3a;
+            height: 100vh;
+            overflow: hidden;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #e8ecf0; }
+        ::-webkit-scrollbar-thumb { background: #b0bcc8; border-radius: 4px; }
         
-        .header { background: linear-gradient(135deg, #0d1b2a, #1b3a5c); color: white; padding: 20px 0; border-radius: 8px; margin-bottom: 30px; border: 1px solid #2a4a6a; }
-        .header h1 { font-size: 28px; font-weight: 300; text-align: center; }
-        .header h1 span { color: #00d4ff; font-weight: 600; }
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 16px;
+            gap: 12px;
+        }
         
-        .admin-bar {
-            background: #111927;
-            border-radius: 8px;
-            padding: 15px 20px;
-            margin-bottom: 20px;
+        .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-            border: 1px solid #1a2a3a;
+            padding: 12px 24px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            flex-shrink: 0;
+            border: 1px solid #e0e6ec;
         }
-        .admin-bar .label { font-weight: 600; color: #8ab4f8; font-size: 14px; }
-        .admin-bar .status { font-size: 13px; color: #8899aa; }
-        .admin-bar .status .success { color: #4caf50; }
-        .admin-bar .status .error { color: #f44336; }
-        
-        .missions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
-        
-        .mission-card {
-            background: #111927;
-            border-radius: 10px;
-            padding: 20px;
-            border: 1px solid #1a2a3a;
-            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-        }
-        .mission-card:hover { transform: translateY(-4px); border-color: #00d4ff; box-shadow: 0 0 20px rgba(0,212,255,0.1); }
-        
-        .mission-card .cve-id { font-size: 18px; font-weight: 600; color: #e0e0e0; }
-        .mission-card .severity { display: inline-block; padding: 2px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 10px; }
-        .severity-critical { background: #d32f2f; color: white; }
-        .severity-high { background: #f57c00; color: white; }
-        .severity-medium { background: #fbc02d; color: #111; }
-        .severity-low { background: #388e3c; color: white; }
-        
-        .mission-card .asset { color: #8899aa; font-size: 14px; margin: 5px 0 10px 0; }
-        .mission-card .description { color: #b0b8c8; font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
-        .mission-card .interesting-score { font-size: 13px; color: #00d4ff; font-weight: 600; }
+        .header-logo h1 { font-size: 22px; font-weight: 600; color: #1a2a3a; }
+        .header-logo h1 span { color: #0066cc; }
+        .header-actions { display: flex; gap: 10px; align-items: center; }
+        .header-actions .status { font-size: 13px; color: #4a6a8a; }
+        .header-actions .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4a9a6a; margin-right: 6px; }
+        .header-actions .status .dot.warning { background: #d4a04a; }
+        .header-actions .status .dot.error { background: #c05050; }
         
         .btn {
-            padding: 10px 20px;
+            padding: 8px 18px;
             border: none;
             border-radius: 6px;
-            font-weight: 600;
+            font-size: 13px;
+            font-weight: 500;
             cursor: pointer;
-            transition: background 0.2s, opacity 0.2s;
-            font-size: 14px;
-            text-decoration: none;
-            display: inline-block;
+            transition: all 0.2s;
+            font-family: inherit;
         }
-        .btn-primary { background: #00d4ff; color: #0a0e17; }
-        .btn-primary:hover { background: #00b8e6; }
-        .btn-primary:disabled { background: #004466; cursor: not-allowed; color: #8899aa; }
+        .btn-primary { background: #0066cc; color: #ffffff; }
+        .btn-primary:hover { background: #0055aa; }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { background: #e8ecf0; color: #1a2a3a; }
+        .btn-secondary:hover { background: #d0d8e0; }
+        .btn-success { background: #1a8a4a; color: #ffffff; }
+        .btn-success:hover { background: #147a3a; }
+        .btn-warning { background: #d4a04a; color: #ffffff; }
+        .btn-warning:hover { background: #c09030; }
         
-        .btn-warning { background: #f57c00; color: white; }
-        .btn-warning:hover { background: #e65100; }
-        .btn-secondary { background: #1a2a3a; color: #8899aa; }
-        .btn-secondary:hover { background: #2a4a5a; }
+        .tab-bar {
+            display: flex;
+            gap: 4px;
+            background: #ffffff;
+            padding: 4px;
+            border-radius: 8px;
+            border: 1px solid #e0e6ec;
+            flex-shrink: 0;
+        }
+        .tab-bar .tab {
+            padding: 10px 24px;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6a7a8a;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .tab-bar .tab:hover { background: #f0f4f8; color: #1a2a3a; }
+        .tab-bar .tab.active { background: #0066cc; color: #ffffff; }
         
-        .loading { text-align: center; padding: 40px; color: #8899aa; }
-        .error { color: #f44336; background: #1a0a0a; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #3a1a1a; }
+        .view-dashboard { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+        .view-dashboard .stats { display: flex; gap: 20px; padding: 12px 0; flex-shrink: 0; }
+        .view-dashboard .stats .stat-item { font-size: 14px; color: #4a5a6a; }
+        .view-dashboard .stats .stat-item strong { color: #1a2a3a; font-weight: 600; }
         
-        /* Mission Modal - Dark Theme */
-        .modal {
+        .missions-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 16px;
+            overflow-y: auto;
+            padding: 4px 0 16px 0;
+            align-content: start;
+        }
+        
+        .mission-card {
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #e0e6ec;
+            transition: all 0.2s;
+        }
+        .mission-card:hover { border-color: #0066cc; box-shadow: 0 4px 16px rgba(0,102,204,0.08); transform: translateY(-2px); }
+        .mission-card .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+        .mission-card .cve-id { font-size: 16px; font-weight: 600; color: #1a2a3a; }
+        .mission-card .severity { padding: 2px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+        .severity-critical { background: #fce8e8; color: #c05050; }
+        .severity-high { background: #fdf0e0; color: #c08030; }
+        .severity-medium { background: #fdf8e0; color: #b0a030; }
+        .severity-low { background: #e8f4e8; color: #3a8a4a; }
+        .mission-card .asset { font-size: 14px; color: #4a6a8a; margin-bottom: 8px; }
+        .mission-card .description { font-size: 14px; color: #4a5a6a; line-height: 1.5; margin-bottom: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .mission-card .card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid #f0f2f5; }
+        .mission-card .card-footer .score { font-size: 13px; color: #4a6a8a; }
+        .mission-card .card-footer .score strong { color: #0066cc; }
+        .mission-card .card-footer .status-badge { font-size: 12px; padding: 4px 12px; border-radius: 12px; background: #f0f2f5; color: #6a7a8a; }
+        .mission-card .card-footer .status-badge.active { background: #e8f4e8; color: #1a7a3a; }
+        .mission-card .start-btn { margin-top: 12px; width: 100%; padding: 10px; border: none; border-radius: 6px; background: #0066cc; color: #ffffff; font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.2s; font-family: inherit; }
+        .mission-card .start-btn:hover { background: #0055aa; }
+        .mission-card .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #6a7a8a; font-size: 16px; }
+        .empty-state .icon { font-size: 48px; color: #d0d8e0; margin-bottom: 16px; }
+        .empty-state .sub { font-size: 14px; color: #8a9aaa; }
+        
+        .modal-overlay {
             display: none;
             position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
             z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.85);
             justify-content: center;
             align-items: center;
-            backdrop-filter: blur(8px);
+            backdrop-filter: blur(4px);
         }
-        .modal-content {
-            background: linear-gradient(145deg, #0d1b2a, #1a2a3a);
-            padding: 40px;
-            border-radius: 16px;
-            max-width: 650px;
+        .modal-overlay.active { display: flex; }
+        .modal-box {
+            background: #ffffff;
+            border-radius: 12px;
+            max-width: 700px;
             width: 90%;
-            max-height: 80vh;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-height: 85vh;
             overflow-y: auto;
-            border: 1px solid #2a4a6a;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
         }
-        .modal-content h2 { 
-            color: #00d4ff; 
-            margin-bottom: 15px; 
-            font-weight: 300;
-            letter-spacing: 1px;
-            border-bottom: 1px solid #1a3a4a;
-            padding-bottom: 10px;
-        }
-        .modal-content .brief-box {
-            background: #0a1620;
+        .modal-box h2 { color: #1a2a3a; margin-bottom: 8px; font-size: 22px; }
+        .modal-box .subtitle { color: #4a6a8a; font-size: 14px; margin-bottom: 20px; }
+        .modal-box .brief-content {
+            background: #f0f6ff;
             padding: 20px;
             border-radius: 8px;
-            margin: 15px 0;
-            border-left: 4px solid #00d4ff;
-            color: #c0d0e0;
-            line-height: 1.6;
+            border-left: 4px solid #0066cc;
+            margin: 16px 0;
+            line-height: 1.8;
+            color: #1a2a3a;
+            font-size: 15px;
+            white-space: pre-wrap;
         }
-        .modal-content .brief-box.blue { 
-            border-left-color: #ff6b00;
+        .modal-box .brief-content.blue {
+            border-left-color: #d4a04a;
+            background: #fdf8e8;
             display: none;
         }
-        .modal-content .mission-status {
-            color: #00d4ff;
-            font-size: 14px;
-            margin: 10px 0;
+        .modal-box .modal-actions { display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end; }
+        .modal-box .modal-actions .btn { padding: 10px 24px; }
+        
+        .view-mission { flex: 1; display: none; flex-direction: column; min-height: 0; }
+        .view-mission.active { display: flex; }
+        
+        .mission-header {
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 10px;
+            padding: 10px 20px;
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e0e6ec;
+            flex-shrink: 0;
+            margin-bottom: 12px;
         }
-        .modal-content .mission-status .spinner {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #0a2a3a;
-            border-top-color: #00d4ff;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .mission-header .title { font-size: 18px; font-weight: 600; color: #1a2a3a; }
+        .mission-header .title span { color: #0066cc; }
+        .mission-header .progress-info { display: flex; align-items: center; gap: 20px; font-size: 14px; color: #4a5a6a; }
+        .mission-header .progress-info .timer { color: #0066cc; font-weight: 500; }
+        .mission-header .exit-btn { padding: 6px 16px; border: none; border-radius: 4px; background: #e8ecef; color: #4a5a6a; font-size: 13px; cursor: pointer; font-family: inherit; }
+        .mission-header .exit-btn:hover { background: #d0d8e0; }
         
-        .modal-content .close-btn {
-            margin-top: 20px;
-            background: #00d4ff;
-            color: #0a0e17;
+        .mission-layout { flex: 1; display: flex; gap: 12px; min-height: 0; }
+        
+        .panel-task {
+            width: 200px;
+            min-width: 150px;
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e0e6ec;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .panel-task .panel-header { padding: 12px 16px; border-bottom: 1px solid #e8ecf0; font-weight: 600; font-size: 14px; color: #1a2a3a; flex-shrink: 0; }
+        .panel-task .task-list { flex: 1; overflow-y: auto; padding: 8px 12px; }
+        .panel-task .task-item { padding: 10px 12px; border-radius: 6px; margin-bottom: 4px; font-size: 13px; color: #4a5a6a; border-left: 3px solid transparent; transition: all 0.2s; }
+        .panel-task .task-item.active { background: #f0f6ff; border-left-color: #0066cc; color: #1a2a3a; font-weight: 500; }
+        .panel-task .task-item.completed { color: #6aaa7a; }
+        .panel-task .task-item .step-icon { display: inline-block; width: 20px; text-align: center; margin-right: 8px; }
+        
+        .panel-workspace {
+            flex: 1;
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e0e6ec;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+        .panel-workspace .workspace-tabs {
+            display: flex;
+            gap: 2px;
+            padding: 8px 12px;
+            border-bottom: 1px solid #e8ecf0;
+            flex-shrink: 0;
+            background: #f8fafc;
+        }
+        .panel-workspace .workspace-tabs .wtab {
+            padding: 6px 16px;
             border: none;
-            padding: 12px 30px;
-            border-radius: 6px;
+            background: transparent;
+            font-size: 13px;
+            color: #6a7a8a;
             cursor: pointer;
-            font-weight: 600;
-            font-size: 15px;
-            transition: background 0.2s;
-            width: 100%;
+            border-radius: 4px;
+            font-family: inherit;
+            transition: all 0.2s;
         }
-        .modal-content .close-btn:hover { background: #00b8e6; }
-        .modal-content .close-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .panel-workspace .workspace-tabs .wtab:hover { background: #e8ecf0; color: #1a2a3a; }
+        .panel-workspace .workspace-tabs .wtab.active { background: #ffffff; color: #1a2a3a; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .panel-workspace .workspace-tabs .wtab.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+        .panel-workspace .workspace-content { flex: 1; padding: 12px; overflow: hidden; display: flex; flex-direction: column; }
+        .panel-workspace .workspace-content .terminal-wrapper {
+            flex: 1;
+            background: #0d1520;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .panel-workspace .workspace-content .terminal-wrapper .xterm {
+            padding: 8px;
+            height: 100%;
+        }
+        .panel-workspace .workspace-content .terminal-wrapper .xterm-viewport {
+            background: #0d1520 !important;
+        }
+        .panel-workspace .workspace-content .iframe-container { flex: 1; border: none; border-radius: 4px; background: #f8fafc; min-height: 200px; }
+        .panel-workspace .workspace-content .iframe-container iframe { width: 100%; height: 100%; border: none; }
+        .panel-workspace .workspace-content .hidden { display: none; }
+        .panel-workspace .workspace-content .blue-team-section {
+            display: none;
+            margin-top: 12px;
+            padding: 16px;
+            background: #fdf8e8;
+            border-radius: 8px;
+            border: 1px solid #e8d8a0;
+            flex-shrink: 0;
+        }
+        .panel-workspace .workspace-content .blue-team-section.active { display: block; }
+        .panel-workspace .workspace-content .blue-team-section .blue-brief { color: #1a2a3a; margin-bottom: 12px; font-size: 14px; line-height: 1.6; }
+        .panel-workspace .workspace-content .blue-team-section textarea { width: 100%; padding: 10px; border: 1px solid #d0d8e0; border-radius: 6px; font-family: 'Consolas', monospace; font-size: 13px; min-height: 70px; resize: vertical; }
+        .panel-workspace .workspace-content .blue-team-section .submit-rule-btn { margin-top: 8px; }
+        .panel-workspace .workspace-content .blue-team-section .rule-result { margin-top: 8px; font-weight: 600; }
+        
+        .panel-help {
+            width: 250px;
+            min-width: 180px;
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e0e6ec;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .panel-help .panel-header { padding: 12px 16px; border-bottom: 1px solid #e8ecf0; font-weight: 600; font-size: 14px; color: #1a2a3a; flex-shrink: 0; }
+        .panel-help .help-content { flex: 1; overflow-y: auto; padding: 12px 16px; font-size: 13px; color: #4a5a6a; line-height: 1.6; }
+        .panel-help .help-content .hint {
+            background: #fff8e1;
+            padding: 16px;
+            border-radius: 6px;
+            border-left: 4px solid #f5a623;
+            font-size: 14px;
+            font-weight: 500;
+            color: #5a4a1a;
+            box-shadow: 0 0 20px rgba(245, 166, 35, 0.15);
+            animation: hintGlow 2s ease-in-out infinite alternate;
+            min-height: 60px;
+        }
+        @keyframes hintGlow {
+            0% { box-shadow: 0 0 10px rgba(245, 166, 35, 0.1); border-left-color: #f5a623; }
+            100% { box-shadow: 0 0 25px rgba(245, 166, 35, 0.3); border-left-color: #e8960a; }
+        }
+        .panel-help .help-content .hint .hint-icon {
+            display: inline-block;
+            margin-right: 8px;
+            font-size: 16px;
+        }
+        .panel-help .help-content .brief-text {
+            background: #f0f6ff;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 4px solid #0066cc;
+            margin-bottom: 12px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #1a2a3a;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .panel-help .help-content .impact-text {
+            background: #fff3e0;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 4px solid #c08030;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #5a4a1a;
         }
         
-        .modal-content .brief-label {
-            color: #8899aa;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-top: 15px;
-        }
+        .mission-footer { display: flex; gap: 12px; padding: 10px 0 0 0; flex-shrink: 0; }
+        .hidden { display: none !important; }
         
-        @media (max-width: 600px) {
+        @media (max-width: 992px) {
+            .panel-task { width: 160px; min-width: 120px; }
+            .panel-help { width: 200px; min-width: 140px; }
+        }
+        @media (max-width: 768px) {
+            .mission-layout { flex-direction: column; }
+            .panel-task { width: 100%; min-width: 0; max-height: 120px; }
+            .panel-help { width: 100%; min-width: 0; max-height: 120px; }
             .missions-grid { grid-template-columns: 1fr; }
-            .admin-bar { flex-direction: column; align-items: stretch; }
-            .modal-content { padding: 25px; }
+            .app-container { height: auto; overflow-y: auto; }
+            body { overflow-y: auto; }
+            .header { flex-wrap: wrap; gap: 8px; }
+            .modal-box { padding: 24px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🔐 <span>Cyber Range</span> Platform</h1>
+    <div class="app-container">
+        <header class="header">
+            <div class="header-logo"><h1>Cyber <span>Range</span></h1></div>
+            <div class="header-actions">
+                <span class="status"><span class="dot" id="status-dot"></span><span id="status-text">Ready</span></span>
+                <button class="btn btn-warning" id="import-btn" onclick="runImport()">Import Scanner</button>
+                <button class="btn btn-secondary" onclick="refreshMissions()">Refresh</button>
+            </div>
+        </header>
+
+        <div class="tab-bar" id="tab-bar">
+            <button class="tab active" id="tab-active" onclick="switchTab('active')">Active</button>
+            <button class="tab" id="tab-archived" onclick="switchTab('archived')">Archived</button>
         </div>
-        
-        <div class="admin-bar">
-            <div>
-                <span class="label">⚙️ Admin Controls</span>
-                <span class="status" id="import-status">Ready</span>
+
+        <div class="view-dashboard" id="view-dashboard">
+            <div class="stats">
+                <span class="stat-item">Total: <strong id="total-count">0</strong></span>
+                <span class="stat-item">Active: <strong id="active-count">0</strong></span>
+                <span class="stat-item">Archived: <strong id="archived-count">0</strong></span>
             </div>
-            <div>
-                <button class="btn btn-warning" id="import-btn" onclick="runImport()">
-                    📥 Run Scanner Import
-                </button>
+            <div class="missions-grid" id="missions-grid"></div>
+        </div>
+
+        <div class="modal-overlay" id="mission-modal">
+            <div class="modal-box">
+                <h2 id="modal-title">Mission Brief</h2>
+                <div class="subtitle" id="modal-subtitle">Review your objectives before starting</div>
+                <div class="brief-content" id="modal-red-brief">Loading brief...</div>
+                <div class="brief-content blue" id="modal-blue-brief">Blue Team brief will appear after flag capture.</div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-primary" id="modal-enter-btn" onclick="enterMission()">Enter Mission</button>
+                </div>
             </div>
         </div>
-        
-        <div id="app">
-            <div id="loading" class="loading">⏳ Loading vulnerabilities...</div>
-            <div id="error" class="error" style="display:none;"></div>
-            
-            <div id="missions-container" style="display:none;">
-                <h2 style="color: #e0e0e0; margin-bottom:20px; font-weight:300;">Top Interesting Vulnerabilities</h2>
-                <p style="color:#8899aa; margin-bottom:20px;">Select a mission to start the vulnerable environment.</p>
-                <div id="missions-grid" class="missions-grid"></div>
+
+        <div class="view-mission" id="view-mission">
+            <div class="mission-header">
+                <div class="title">Mission: <span id="mission-title">Loading...</span></div>
+                <div class="progress-info">
+                    <span id="mission-step">Step 1 of 6</span>
+                    <span class="timer" id="mission-timer">00:00</span>
+                </div>
+                <button class="exit-btn" onclick="exitMission()">Exit</button>
             </div>
-        </div>
-    </div>
-    
-    <!-- Mission Modal -->
-    <div id="mission-modal" class="modal">
-        <div class="modal-content">
-            <h2 id="modal-title">📋 Loading Mission...</h2>
-            <div id="modal-status" class="mission-status">
-                <span class="spinner"></span>
-                <span id="modal-status-text">Starting mission environment...</span>
+
+            <div class="mission-layout">
+                <div class="panel-task">
+                    <div class="panel-header">Tasks</div>
+                    <div class="task-list" id="task-list"></div>
+                </div>
+
+                <div class="panel-workspace">
+                    <div class="workspace-tabs">
+                        <button class="wtab active" id="wtab-terminal" onclick="switchWorkspace('terminal')">Terminal</button>
+                        <button class="wtab" id="wtab-target" onclick="switchWorkspace('target')">Target</button>
+                        <button class="wtab disabled" id="wtab-splunk" onclick="switchWorkspace('splunk')">Splunk</button>
+                    </div>
+                    <div class="workspace-content" id="workspace-content">
+                        <div id="terminal-container" style="flex:1;display:flex;flex-direction:column;">
+                            <div class="terminal-wrapper" id="terminal-wrapper"></div>
+                        </div>
+                        <div id="target-container" class="hidden" style="flex:1;display:flex;flex-direction:column;">
+                            <div class="iframe-container" style="flex:1;">
+                                <iframe id="app-iframe" src="about:blank"></iframe>
+                            </div>
+                        </div>
+                        <div id="splunk-container" class="hidden" style="flex:1;display:flex;flex-direction:column;">
+                            <div class="iframe-container" style="flex:1;">
+                                <iframe id="splunk-iframe" src="about:blank"></iframe>
+                            </div>
+                        </div>
+                        <div id="blue-team-section" class="blue-team-section">
+                            <div class="blue-brief" id="blue-brief-text">Blue Team brief will appear here.</div>
+                            <label style="font-weight:600;font-size:13px;">Write your detection rule:</label>
+                            <textarea id="rule-input" placeholder='e.g., alert tcp any any -> any 80 (msg:"SQL Injection"; content:"OR 1=1"; sid:1000001;)'></textarea>
+                            <button class="btn btn-primary submit-rule-btn" onclick="submitRule()">Validate Rule</button>
+                            <div class="rule-result" id="rule-result"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-help">
+                    <div class="panel-header">Help</div>
+                    <div class="help-content" id="help-content">
+                        <div style="font-weight:600;font-size:13px;color:#1a2a3a;margin-bottom:4px;">Mission Brief</div>
+                        <div class="brief-text" id="help-brief">Start a mission to see the brief here.</div>
+                        
+                        <div style="font-weight:600;font-size:13px;color:#1a2a3a;margin-top:12px;margin-bottom:4px;">AI Hint</div>
+                        <div class="hint" id="help-hint">
+                            AI hints will appear here when you're stuck or idle.
+                        </div>
+                        
+                        <div style="font-weight:600;font-size:13px;color:#1a2a3a;margin-top:12px;margin-bottom:4px;">Impact</div>
+                        <div class="impact-text" id="help-impact">Impact information will appear here.</div>
+                    </div>
+                </div>
             </div>
-            <div id="modal-red-brief" class="brief-box">Loading mission brief...</div>
-            <div id="modal-blue-brief" class="brief-box blue">🔵 Blue Team Brief will appear after you find the flag.</div>
-            <button class="close-btn" id="modal-btn" disabled>⏳ Loading...</button>
+
+            <div class="mission-footer">
+                <button class="btn btn-secondary" id="submit-report-btn" onclick="submitReport()" disabled>Submit Report</button>
+            </div>
         </div>
     </div>
 
     <script>
         const API_BASE = 'http://localhost:8000';
+        let currentTab = 'active';
+        let currentWorkspace = 'terminal';
+        let missions = [];
+        let activeMissions = [];
+        let archivedMissions = [];
+        let currentMissionId = null;
         let currentMissionData = null;
-        let missionStarted = false;
-        
-        document.addEventListener('DOMContentLoaded', loadVulnerabilities);
-        
-        function loadVulnerabilities() {
-            const loading = document.getElementById('loading');
-            const errorDiv = document.getElementById('error');
-            const container = document.getElementById('missions-container');
-            const grid = document.getElementById('missions-grid');
-            
-            loading.style.display = 'block';
-            errorDiv.style.display = 'none';
-            container.style.display = 'none';
-            
-            fetch(`${API_BASE}/vulnerabilities/top?limit=10`)
+        let flagCaptured = false;
+        let timerInterval = null;
+        let seconds = 0;
+        let currentStep = 0;
+        const totalSteps = 6;
+
+        let term = null;
+        let fitAddon = null;
+        let terminalInitialized = false;
+        let currentInput = '';
+        let cursorPosition = 0;
+        let commandHistory = [];
+        let historyIndex = 0;
+
+        let lastCommandTime = Date.now();
+        let failedAttempts = 0;
+        let idleCheckInterval = null;
+        let lastCommands = [];
+        let hintTriggered = false;
+        let isMissionActive = false;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadMissions();
+            initTerminal();
+        });
+
+        function initTerminal() {
+            if (terminalInitialized) return;
+            const wrapper = document.getElementById('terminal-wrapper');
+            if (!wrapper) return;
+            term = new Terminal({
+                cursorBlink: true,
+                theme: {
+                    background: '#0d1520',
+                    foreground: '#b0b8c8',
+                    cursor: '#00d4ff',
+                    black: '#0d1520',
+                    red: '#c06060',
+                    green: '#5aaa7a',
+                    yellow: '#d4a04a',
+                    blue: '#4a8ab5',
+                    magenta: '#a06aaa',
+                    cyan: '#5aaaba',
+                    white: '#c0d0e0'
+                },
+                convertEol: true
+            });
+            fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(wrapper);
+            fitAddon.fit();
+            term.write('\x1b[1;32m$ \x1b[0m');
+            term.onData((data) => {
+                lastCommandTime = Date.now();
+                hintTriggered = false;
+                handleTerminalInput(data);
+            });
+            window.addEventListener('resize', () => {
+                if (fitAddon) setTimeout(() => fitAddon.fit(), 100);
+            });
+            terminalInitialized = true;
+        }
+
+        function startIdleCheck() {
+            if (idleCheckInterval) clearInterval(idleCheckInterval);
+            idleCheckInterval = setInterval(() => {
+                if (!isMissionActive) return;
+                if (!currentMissionData) return;
+                if (flagCaptured) return;
+                if (currentStep >= 5) return;
+                const idleTime = (Date.now() - lastCommandTime) / 1000;
+                if (idleTime > 60 && !hintTriggered) {
+                    hintTriggered = true;
+                    fetchAIHint('idle', idleTime);
+                }
+            }, 5000);
+        }
+
+        function fetchAIHint(trigger, details) {
+            const actions = lastCommands.slice(-5).join(', ');
+            const cveDesc = currentMissionData?.description || '';
+            document.getElementById('help-hint').innerHTML = `Thinking...`;
+            const url = `${API_BASE}/ai/hint?task_name=Step ${currentStep+1}&current_step=Step ${currentStep+1}&actions=${encodeURIComponent(actions)}&cve_description=${encodeURIComponent(cveDesc)}`;
+            fetch(url)
                 .then(res => res.json())
                 .then(data => {
-                    loading.style.display = 'none';
-                    
-                    if (data.error) {
-                        errorDiv.textContent = 'Error: ' + data.error;
-                        errorDiv.style.display = 'block';
-                        return;
-                    }
-                    
-                    if (!data.vulnerabilities || data.vulnerabilities.length === 0) {
-                        errorDiv.innerHTML = 'No vulnerabilities available. Click "Run Scanner Import" to fetch vulnerabilities from the scanner database.';
-                        errorDiv.style.display = 'block';
-                        return;
-                    }
-                    
-                    container.style.display = 'block';
-                    grid.innerHTML = '';
-                    
-                    data.vulnerabilities.forEach(vuln => {
-                        const card = createVulnerabilityCard(vuln);
-                        grid.appendChild(card);
-                    });
+                    const hint = data.hint || 'Try exploring the target with basic reconnaissance commands.';
+                    let triggerText = '';
+                    if (trigger === 'idle') triggerText = `You've been idle for ${Math.round(details)} seconds. `;
+                    else if (trigger === 'failure') triggerText = `You've tried this step multiple times. `;
+                    document.getElementById('help-hint').innerHTML = `<span class="hint-icon"></span> ${triggerText}${hint}`;
                 })
                 .catch(err => {
-                    loading.style.display = 'none';
-                    errorDiv.textContent = 'Failed to load vulnerabilities: ' + err.message;
-                    errorDiv.style.display = 'block';
+                    document.getElementById('help-hint').innerHTML = `<span class="hint-icon"></span> Could not fetch hint: ${err.message}`;
                 });
         }
-        
-        function createVulnerabilityCard(vuln) {
-            const div = document.createElement('div');
-            div.className = 'mission-card';
-            
-            const severityClass = vuln.severity ? vuln.severity.toLowerCase() : 'medium';
-            
-            div.innerHTML = `
-                <div>
-                    <span class="cve-id">${vuln.cve_id || 'Unknown CVE'}</span>
-                    <span class="severity severity-${severityClass}">${vuln.severity || 'Unknown'}</span>
-                </div>
-                <div class="asset">📦 ${vuln.asset || 'Unknown Asset'}</div>
-                <div class="description">${vuln.description ? vuln.description.substring(0, 120) + '...' : 'No description available.'}</div>
-                <div class="interesting-score">⭐ Interestingness Score: ${vuln.interestingness_score || '?'}/10</div>
-                <br>
-                <button class="btn btn-primary" onclick="startMission(${vuln.id})">
-                    🚀 Start Mission
-                </button>
-            `;
-            
-            return div;
-        }
-        
-        function startMission(id) {
-            const modal = document.getElementById('mission-modal');
-            const title = document.getElementById('modal-title');
-            const statusText = document.getElementById('modal-status-text');
-            const redBrief = document.getElementById('modal-red-brief');
-            const blueBrief = document.getElementById('modal-blue-brief');
-            const btn = document.getElementById('modal-btn');
-            
-            // Reset and show modal
-            modal.style.display = 'flex';
-            title.textContent = '📋 Loading Mission...';
-            statusText.textContent = 'Starting mission environment...';
-            redBrief.textContent = '⏳ Generating mission brief...';
-            blueBrief.style.display = 'none';
-            btn.textContent = '⏳ Loading...';
-            btn.disabled = true;
-            
-            fetch(`${API_BASE}/missions/${id}/start`, {
-                method: 'POST'
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) {
-                    redBrief.textContent = '❌ Error: ' + data.error;
-                    title.textContent = '❌ Mission Failed';
-                    statusText.textContent = 'Error starting mission';
-                    btn.textContent = 'Close';
-                    btn.disabled = false;
-                    btn.onclick = function() { closeModal(); };
-                    return;
+
+        function handleTerminalInput(data) {
+            if (data === '\r') {
+                term.write('\r\n');
+                const cmd = currentInput.trim();
+                currentInput = '';
+                cursorPosition = 0;
+                if (cmd) {
+                    commandHistory.push(cmd);
+                    historyIndex = commandHistory.length;
+                    lastCommands.push(cmd);
+                    if (lastCommands.length > 10) lastCommands.shift();
+                    processCommand(cmd);
+                } else {
+                    term.write('\x1b[1;32m$ \x1b[0m');
                 }
-                
-                currentMissionData = data;
-                title.textContent = `📋 Mission: ${data.cve_id}`;
-                statusText.textContent = '✅ Mission ready!';
-                redBrief.textContent = data.red_team_brief || 'No brief available.';
-                blueBrief.style.display = 'none';
-                
-                // Enable the button to open the app
-                btn.textContent = '🎯 Enter Vulnerable Environment';
-                btn.disabled = false;
-                btn.onclick = function() {
-                    // Open the vulnerable app in a new tab
-                    window.open(data.app_url || 'http://localhost:8080/', '_blank');
-                    closeModal();
-                };
-            })
-            .catch(err => {
-                redBrief.textContent = '❌ Failed to start mission: ' + err.message;
-                title.textContent = '❌ Error';
-                statusText.textContent = 'Error';
-                btn.textContent = 'Close';
-                btn.disabled = false;
-                btn.onclick = function() { closeModal(); };
+                return;
+            }
+            if (data === '\x7f' || data === '\b') {
+                if (cursorPosition > 0) {
+                    const before = currentInput.substring(0, cursorPosition - 1);
+                    const after = currentInput.substring(cursorPosition);
+                    currentInput = before + after;
+                    cursorPosition--;
+                    redrawInputLine();
+                }
+                return;
+            }
+            if (data === '\x1b[D') {
+                if (cursorPosition > 0) { cursorPosition--; term.write('\x1b[D'); }
+                return;
+            }
+            if (data === '\x1b[C') {
+                if (cursorPosition < currentInput.length) { cursorPosition++; term.write('\x1b[C'); }
+                return;
+            }
+            if (data === '\x1b[A') {
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    currentInput = commandHistory[historyIndex] || '';
+                    cursorPosition = currentInput.length;
+                    redrawInputLine();
+                }
+                return;
+            }
+            if (data === '\x1b[B') {
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    currentInput = commandHistory[historyIndex] || '';
+                    cursorPosition = currentInput.length;
+                    redrawInputLine();
+                } else {
+                    historyIndex = commandHistory.length;
+                    currentInput = '';
+                    cursorPosition = 0;
+                    redrawInputLine();
+                }
+                return;
+            }
+            if (data === '\x1b[3~') {
+                if (cursorPosition < currentInput.length) {
+                    const before = currentInput.substring(0, cursorPosition);
+                    const after = currentInput.substring(cursorPosition + 1);
+                    currentInput = before + after;
+                    redrawInputLine();
+                }
+                return;
+            }
+            if (data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
+                const before = currentInput.substring(0, cursorPosition);
+                const after = currentInput.substring(cursorPosition);
+                currentInput = before + data + after;
+                cursorPosition++;
+                redrawInputLine();
+            }
+        }
+
+        function redrawInputLine() {
+            term.write('\r');
+            term.write('\x1b[2K');
+            term.write('\x1b[1;32m$ \x1b[0m');
+            term.write(currentInput);
+            if (cursorPosition < currentInput.length) {
+                term.write(`\x1b[${currentInput.length - cursorPosition}D`);
+            }
+        }
+
+        function processCommand(cmd) {
+            if (!cmd) {
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
+            }
+            
+            if (cmd.includes('curl') && (cmd.includes('OR 1=1') || cmd.toLowerCase().includes('or'))) {
+                term.writeln('\x1b[1;32m🏴 FLAG-FOUND: You retrieved 2 users! Data: [(1, \'admin\', \'secretpass\'), (2, \'john\', \'doe123\')]\x1b[0m');
+                captureFlag();
+                failedAttempts = 0;
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
+            }
+            
+            if (cmd.includes('nmap')) {
+                term.writeln('\x1b[2;37mStarting Nmap 7.94\x1b[0m');
+                term.writeln('\x1b[2;37mPORT   STATE SERVICE\x1b[0m');
+                term.writeln('\x1b[2;37m80/tcp open  http\x1b[0m');
+                failedAttempts = 0;
+            } else if (cmd.includes('curl') && cmd.includes('vuln')) {
+                term.writeln('\x1b[2;37m[(1, \'admin\', \'secretpass\')]\x1b[0m');
+                failedAttempts = 0;
+            } else if (cmd.includes('cat')) {
+                if (currentMissionData?.red_team_brief) {
+                    term.writeln('\x1b[2;37m' + currentMissionData.red_team_brief + '\x1b[0m');
+                    if (currentStep === 0) {
+                        term.writeln('\x1b[1;32m Brief reviewed. Proceed to next step.\x1b[0m');
+                        currentStep = 1;
+                        updateTasks(currentStep);
+                        failedAttempts = 0;
+                    }
+                } else {
+                    term.writeln('\x1b[2;37mNo brief available.\x1b[0m');
+                }
+            } else if (cmd.includes('index=')) {
+                term.writeln('\x1b[2;37mFound 1 event\x1b[0m');
+                term.writeln('\x1b[2;37m2026-07-29 14:32:22 FLAG-FOUND: admin\x1b[0m');
+                if (currentStep === 4) {
+                    term.writeln('\x1b[1;32m Found the flag in Splunk. Write a detection rule.\x1b[0m');
+                    currentStep = 5;
+                    updateTasks(currentStep);
+                }
+            } else if (cmd === 'help') {
+                term.writeln('\x1b[2;37mCommands: nmap, curl, cat, index=main, help, clear\x1b[0m');
+            } else if (cmd === 'clear') {
+                term.clear();
+            } else {
+                failedAttempts++;
+                term.writeln('\x1b[2;37mCommand not recognized. Try: nmap, curl, cat, index=main, help, clear\x1b[0m');
+                if (failedAttempts >= 2) {
+                    fetchAIHint('failure', failedAttempts);
+                }
+            }
+            term.write('\x1b[1;32m$ \x1b[0m');
+            lastCommandTime = Date.now();
+        }
+
+        function sendCommand(cmd) {
+            if (!term) return;
+            term.write('\r\x1b[2K');
+            currentInput = cmd;
+            cursorPosition = cmd.length;
+            term.write('\x1b[1;32m$ \x1b[0m' + cmd);
+            setTimeout(() => {
+                term.write('\r\n');
+                const commandToRun = currentInput.trim();
+                currentInput = '';
+                cursorPosition = 0;
+                if (commandToRun) {
+                    commandHistory.push(commandToRun);
+                    historyIndex = commandHistory.length;
+                    lastCommands.push(commandToRun);
+                    if (lastCommands.length > 10) lastCommands.shift();
+                    processCommand(commandToRun);
+                } else {
+                    term.write('\x1b[1;32m$ \x1b[0m');
+                }
+            }, 100);
+        }
+
+        function loadMissions() {
+            const grid = document.getElementById('missions-grid');
+            grid.innerHTML = '<div class="empty-state"><div class="icon">[ ]</div><div>Loading...</div></div>';
+            fetch(`${API_BASE}/vulnerabilities/top?limit=20`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        grid.innerHTML = `<div class="empty-state"><div class="icon">⚠</div><div>Error: ${data.error}</div></div>`;
+                        return;
+                    }
+                    if (!data.vulnerabilities || data.vulnerabilities.length === 0) {
+                        grid.innerHTML = `<div class="empty-state"><div class="icon">[ ]</div><div>No missions</div><div class="sub">Click "Import Scanner"</div></div>`;
+                        document.getElementById('total-count').textContent = '0';
+                        document.getElementById('active-count').textContent = '0';
+                        document.getElementById('archived-count').textContent = '0';
+                        return;
+                    }
+                    missions = data.vulnerabilities;
+                    archivedMissions = missions.slice(0, Math.min(2, missions.length));
+                    activeMissions = missions.slice(Math.min(2, missions.length));
+                    document.getElementById('total-count').textContent = missions.length;
+                    document.getElementById('active-count').textContent = activeMissions.length;
+                    document.getElementById('archived-count').textContent = archivedMissions.length;
+                    renderMissions();
+                })
+                .catch(err => {
+                    grid.innerHTML = `<div class="empty-state"><div class="icon">⚠</div><div>${err.message}</div></div>`;
+                });
+        }
+
+        function renderMissions() {
+            const grid = document.getElementById('missions-grid');
+            const list = currentTab === 'active' ? activeMissions : archivedMissions;
+            
+            if (list.length === 0) {
+                grid.innerHTML = `<div class="empty-state"><div class="icon">[ ]</div><div>No ${currentTab} missions</div></div>`;
+                return;
+            }
+            
+            grid.innerHTML = '';
+            list.forEach(vuln => {
+                const card = document.createElement('div');
+                card.className = 'mission-card';
+                const sev = vuln.severity ? vuln.severity.toLowerCase() : 'medium';
+                card.innerHTML = `
+                    <div class="card-header">
+                        <span class="cve-id">${vuln.cve_id || 'Unknown'}</span>
+                        <span class="severity severity-${sev}">${vuln.severity || 'Unknown'}</span>
+                    </div>
+                    <div class="asset">${vuln.asset || 'Unknown Asset'}</div>
+                    <div class="description">${vuln.description ? vuln.description.substring(0, 150) + '...' : 'No description'}</div>
+                    <div class="card-footer">
+                        <span class="score">Score: <strong>${vuln.interestingness_score || '?'}/10</strong></span>
+                        <span class="status-badge ${currentTab}">${currentTab}</span>
+                    </div>
+                    <button class="start-btn" onclick="showMissionBrief(${vuln.id})">Start Mission</button>
+                `;
+                grid.appendChild(card);
             });
         }
-        
-        function closeModal() {
-            document.getElementById('mission-modal').style.display = 'none';
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-bar .tab').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            renderMissions();
         }
-        
+
+        function refreshMissions() { loadMissions(); }
+
+        function showMissionBrief(id) {
+            currentMissionId = id;
+            const modal = document.getElementById('mission-modal');
+            modal.classList.add('active');
+            document.getElementById('modal-title').textContent = 'Loading...';
+            document.getElementById('modal-red-brief').textContent = 'Loading mission brief...';
+            document.getElementById('modal-enter-btn').disabled = true;
+            document.getElementById('modal-enter-btn').textContent = 'Loading...';
+
+            fetch(`${API_BASE}/missions/${id}/start`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('modal-red-brief').textContent = 'Error: ' + data.error;
+                        document.getElementById('modal-enter-btn').disabled = true;
+                        return;
+                    }
+                    currentMissionData = data;
+                    document.getElementById('modal-title').textContent = 'Mission: ' + data.cve_id;
+                    document.getElementById('modal-red-brief').textContent = data.red_team_brief || 'No brief available.';
+                    document.getElementById('modal-subtitle').textContent = 'Review your Red Team objectives.';
+                    document.getElementById('modal-enter-btn').disabled = false;
+                    document.getElementById('modal-enter-btn').textContent = 'Enter Mission';
+                    
+                    document.getElementById('help-brief').textContent = data.red_team_brief || 'No brief available.';
+                    const impact = extractImpact(data.red_team_brief || '');
+                    document.getElementById('help-impact').textContent = impact;
+                })
+                .catch(err => {
+                    document.getElementById('modal-red-brief').textContent = 'Error: ' + err.message;
+                    document.getElementById('modal-enter-btn').disabled = true;
+                });
+        }
+
+        function extractImpact(brief) {
+            const sentences = brief.split('. ');
+            if (sentences.length >= 2) {
+                return sentences.slice(1, 3).join('. ') || 'Unauthorized access and data compromise.';
+            }
+            return 'Unauthorized access and data compromise.';
+        }
+
+        function closeModal() {
+            document.getElementById('mission-modal').classList.remove('active');
+        }
+
+        function enterMission() {
+            closeModal();
+            isMissionActive = true;
+            startIdleCheck();
+            
+            document.getElementById('view-dashboard').style.display = 'none';
+            document.getElementById('view-mission').classList.add('active');
+            document.getElementById('tab-bar').style.display = 'none';
+            
+            document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
+            
+            currentStep = 0;
+            updateTasks(currentStep);
+            
+            seconds = 0;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                seconds++;
+                const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+                const secs = String(seconds % 60).padStart(2, '0');
+                document.getElementById('mission-timer').textContent = `${mins}:${secs}`;
+            }, 1000);
+
+            flagCaptured = false;
+            document.getElementById('submit-report-btn').disabled = true;
+            document.getElementById('blue-team-section').classList.remove('active');
+            document.getElementById('rule-result').textContent = '';
+            document.getElementById('rule-input').value = '';
+            document.getElementById('wtab-splunk').classList.add('disabled');
+
+            lastCommandTime = Date.now();
+            failedAttempts = 0;
+            lastCommands = [];
+            hintTriggered = false;
+
+            // Reset hint to default
+            document.getElementById('help-hint').innerHTML = `<span class="hint-icon">💡</span> AI hints will appear here when you're stuck or idle.`;
+
+            if (term) {
+                term.clear();
+                term.write('\x1b[1;32m$ \x1b[0m');
+                currentInput = '';
+                cursorPosition = 0;
+                commandHistory = [];
+                historyIndex = 0;
+            }
+
+            if (currentMissionData.app_url) {
+                document.getElementById('app-iframe').src = currentMissionData.app_url;
+            }
+
+            switchWorkspace('terminal');
+        }
+
+        function updateTasks(step) {
+            const tasks = [
+                'Review Brief & Impact',
+                'Reconnaissance',
+                'Exploit Vulnerability',
+                'Capture Flag',
+                'Blue Team Investigation',
+                'Submit Rule & Report'
+            ];
+            const list = document.getElementById('task-list');
+            list.innerHTML = '';
+            tasks.forEach((label, i) => {
+                const div = document.createElement('div');
+                div.className = 'task-item';
+                if (i < step) div.classList.add('completed');
+                if (i === step) div.classList.add('active');
+                const icon = i < step ? '✓' : (i === step ? '►' : '○');
+                div.innerHTML = `<span class="step-icon">${icon}</span> ${label}`;
+                list.appendChild(div);
+            });
+            document.getElementById('mission-step').textContent = `Step ${step+1} of ${tasks.length}`;
+        }
+
+        function switchWorkspace(tab) {
+            currentWorkspace = tab;
+            document.querySelectorAll('.workspace-tabs .wtab').forEach(el => el.classList.remove('active'));
+            document.getElementById(`wtab-${tab}`).classList.add('active');
+
+            const terminal = document.getElementById('terminal-container');
+            const target = document.getElementById('target-container');
+            const splunk = document.getElementById('splunk-container');
+
+            terminal.classList.add('hidden');
+            target.classList.add('hidden');
+            splunk.classList.add('hidden');
+
+            if (tab === 'terminal') {
+                terminal.classList.remove('hidden');
+                setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 100);
+            } else if (tab === 'target') target.classList.remove('hidden');
+            else if (tab === 'splunk') {
+                splunk.classList.remove('hidden');
+                const iframe = document.getElementById('splunk-iframe');
+                if (iframe.src === 'about:blank') iframe.src = 'https://www.splunk.com/';
+            }
+        }
+
+        function captureFlag() {
+            if (flagCaptured) return;
+            flagCaptured = true;
+            document.getElementById('submit-report-btn').disabled = false;
+            document.getElementById('wtab-splunk').classList.remove('disabled');
+            const blueSection = document.getElementById('blue-team-section');
+            blueSection.classList.add('active');
+            document.getElementById('blue-brief-text').textContent = currentMissionData.blue_team_brief || 'Blue Team: Investigate the logs in Splunk and write a detection rule.';
+            currentStep = 4;
+            updateTasks(currentStep);
+            switchWorkspace('splunk');
+        }
+
+        function submitRule() {
+            const input = document.getElementById('rule-input');
+            const result = document.getElementById('rule-result');
+            const rule = input.value.trim();
+            if (!rule) {
+                result.textContent = 'Please write a detection rule.';
+                result.style.color = '#c05050';
+                return;
+            }
+            if (rule.toLowerCase().includes('sql') || rule.toLowerCase().includes('or 1=1') || rule.toLowerCase().includes('alert')) {
+                result.textContent = 'Rule validated! The attack is blocked. Proceed to submit your report.';
+                result.style.color = '#1a8a4a';
+                currentStep = 5;
+                updateTasks(currentStep);
+                document.getElementById('submit-report-btn').disabled = false;
+            } else {
+                result.textContent = 'Rule did not block the attack. Try writing a rule that detects SQL injection patterns like "OR 1=1".';
+                result.style.color = '#c05050';
+            }
+        }
+
+        function submitReport() {
+            if (!flagCaptured) {
+                alert('You must capture the flag before submitting the report.');
+                return;
+            }
+            alert(' Report submitted successfully!\n\nMission Complete!\n\nRed Team: Flag captured\nBlue Team: Detection rule validated');
+            exitMission();
+        }
+
+        function exitMission() {
+            isMissionActive = false;
+            if (idleCheckInterval) clearInterval(idleCheckInterval);
+            if (timerInterval) clearInterval(timerInterval);
+            
+            document.getElementById('view-mission').classList.remove('active');
+            document.getElementById('view-dashboard').style.display = 'flex';
+            document.getElementById('tab-bar').style.display = 'flex';
+            document.getElementById('blue-team-section').classList.remove('active');
+            document.getElementById('rule-result').textContent = '';
+            document.getElementById('rule-input').value = '';
+            document.getElementById('submit-report-btn').disabled = true;
+            document.getElementById('wtab-splunk').classList.add('disabled');
+            
+            // Reset hint
+            document.getElementById('help-hint').innerHTML = `<span class="hint-icon"></span> AI hints will appear here when you're stuck or idle.`;
+            document.getElementById('help-brief').textContent = 'Start a mission to see the brief here.';
+            document.getElementById('help-impact').textContent = 'Impact information will appear here.';
+            
+            currentMissionData = null;
+            renderMissions();
+        }
+
         function runImport() {
             const btn = document.getElementById('import-btn');
-            const statusDiv = document.getElementById('import-status');
-            
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
             btn.disabled = true;
-            btn.textContent = '⏳ Importing...';
-            statusDiv.innerHTML = '<span style="color:#f57c00;">⏳ Running import... This may take a few minutes.</span>';
-            
-            const errorDiv = document.getElementById('error');
-            errorDiv.style.display = 'block';
-            errorDiv.style.background = '#1a1a0a';
-            errorDiv.style.color = '#f57c00';
-            errorDiv.textContent = '⏳ Importing vulnerabilities from scanner database... Please wait.';
-            
-            fetch(`${API_BASE}/admin/import`, {
-                method: 'POST'
-            })
-            .then(res => res.json())
-            .then(data => {
-                btn.disabled = false;
-                btn.textContent = '📥 Run Scanner Import';
-                
-                if (data.status === 'success') {
-                    statusDiv.innerHTML = '<span style="color:#4caf50;">✅ Import completed successfully!</span>';
-                    errorDiv.style.display = 'none';
-                    setTimeout(loadVulnerabilities, 2000);
-                } else {
-                    statusDiv.innerHTML = `<span style="color:#f44336;">❌ Import failed: ${data.message || 'Unknown error'}</span>`;
-                    errorDiv.style.background = '#1a0a0a';
-                    errorDiv.style.color = '#f44336';
-                    errorDiv.textContent = '❌ Import failed: ' + (data.message || data.error || 'Unknown error');
-                    errorDiv.style.display = 'block';
-                }
-            })
-            .catch(err => {
-                btn.disabled = false;
-                btn.textContent = '📥 Run Scanner Import';
-                statusDiv.innerHTML = `<span style="color:#f44336;">❌ Error: ${err.message}</span>`;
-                errorDiv.style.background = '#1a0a0a';
-                errorDiv.style.color = '#f44336';
-                errorDiv.textContent = '❌ Failed to run import: ' + err.message;
-                errorDiv.style.display = 'block';
-            });
+            btn.textContent = 'Importing...';
+            dot.className = 'dot warning';
+            text.textContent = 'Importing...';
+            fetch(`${API_BASE}/admin/import`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    btn.disabled = false;
+                    btn.textContent = 'Import Scanner';
+                    if (data.status === 'success') {
+                        dot.className = 'dot';
+                        text.textContent = 'Import complete';
+                        loadMissions();
+                    } else {
+                        dot.className = 'dot error';
+                        text.textContent = 'Failed';
+                    }
+                })
+                .catch(err => {
+                    btn.disabled = false;
+                    btn.textContent = 'Import Scanner';
+                    dot.className = 'dot error';
+                    text.textContent = 'Error';
+                });
         }
     </script>
 </body>

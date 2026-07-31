@@ -13,3 +13,4 @@ EXPOSE 80
 
 # Run the app
 CMD ["python", "app.py"]
+
