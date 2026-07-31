@@ -312,11 +312,6 @@
             0% { box-shadow: 0 0 10px rgba(245, 166, 35, 0.1); border-left-color: #f5a623; }
             100% { box-shadow: 0 0 25px rgba(245, 166, 35, 0.3); border-left-color: #e8960a; }
         }
-        .panel-help .help-content .hint .hint-icon {
-            display: inline-block;
-            margin-right: 8px;
-            font-size: 16px;
-        }
         .panel-help .help-content .brief-text {
             background: #f0f6ff;
             padding: 12px 16px;
@@ -555,19 +550,19 @@
         function fetchAIHint(trigger, details) {
             const actions = lastCommands.slice(-5).join(', ');
             const cveDesc = currentMissionData?.description || '';
-            document.getElementById('help-hint').innerHTML = `Thinking...`;
+            document.getElementById('help-hint').innerHTML = 'Thinking...';
             const url = `${API_BASE}/ai/hint?task_name=Step ${currentStep+1}&current_step=Step ${currentStep+1}&actions=${encodeURIComponent(actions)}&cve_description=${encodeURIComponent(cveDesc)}`;
             fetch(url)
                 .then(res => res.json())
                 .then(data => {
                     const hint = data.hint || 'Try exploring the target with basic reconnaissance commands.';
                     let triggerText = '';
-                    if (trigger === 'idle') triggerText = `You've been idle for ${Math.round(details)} seconds. `;
-                    else if (trigger === 'failure') triggerText = `You've tried this step multiple times. `;
-                    document.getElementById('help-hint').innerHTML = `<span class="hint-icon"></span> ${triggerText}${hint}`;
+                    if (trigger === 'idle') triggerText = 'You\'ve been idle for ' + Math.round(details) + ' seconds. ';
+                    else if (trigger === 'failure') triggerText = 'You\'ve tried this step multiple times. ';
+                    document.getElementById('help-hint').innerHTML = triggerText + hint;
                 })
                 .catch(err => {
-                    document.getElementById('help-hint').innerHTML = `<span class="hint-icon"></span> Could not fetch hint: ${err.message}`;
+                    document.getElementById('help-hint').innerHTML = 'Could not fetch hint: ' + err.message;
                 });
         }
 
@@ -653,7 +648,7 @@
             term.write('\x1b[1;32m$ \x1b[0m');
             term.write(currentInput);
             if (cursorPosition < currentInput.length) {
-                term.write(`\x1b[${currentInput.length - cursorPosition}D`);
+                term.write('\x1b[' + (currentInput.length - cursorPosition) + 'D');
             }
         }
 
@@ -663,27 +658,15 @@
                 return;
             }
             
-            if (cmd.includes('curl') && (cmd.includes('OR 1=1') || cmd.toLowerCase().includes('or'))) {
-                term.writeln('\x1b[1;32m🏴 FLAG-FOUND: You retrieved 2 users! Data: [(1, \'admin\', \'secretpass\'), (2, \'john\', \'doe123\')]\x1b[0m');
-                captureFlag();
-                failedAttempts = 0;
-                term.write('\x1b[1;32m$ \x1b[0m');
-                return;
-            }
+            // Make everything case-insensitive
+            const lowerCmd = cmd.toLowerCase();
             
-            if (cmd.includes('nmap')) {
-                term.writeln('\x1b[2;37mStarting Nmap 7.94\x1b[0m');
-                term.writeln('\x1b[2;37mPORT   STATE SERVICE\x1b[0m');
-                term.writeln('\x1b[2;37m80/tcp open  http\x1b[0m');
-                failedAttempts = 0;
-            } else if (cmd.includes('curl') && cmd.includes('vuln')) {
-                term.writeln('\x1b[2;37m[(1, \'admin\', \'secretpass\')]\x1b[0m');
-                failedAttempts = 0;
-            } else if (cmd.includes('cat')) {
+            // STEP 1 → STEP 2: Review Brief
+            if (lowerCmd.includes('cat') && lowerCmd.includes('brief')) {
                 if (currentMissionData?.red_team_brief) {
                     term.writeln('\x1b[2;37m' + currentMissionData.red_team_brief + '\x1b[0m');
                     if (currentStep === 0) {
-                        term.writeln('\x1b[1;32m Brief reviewed. Proceed to next step.\x1b[0m');
+                        term.writeln('\x1b[1;32mBrief reviewed. Proceed to reconnaissance.\x1b[0m');
                         currentStep = 1;
                         updateTasks(currentStep);
                         failedAttempts = 0;
@@ -691,27 +674,48 @@
                 } else {
                     term.writeln('\x1b[2;37mNo brief available.\x1b[0m');
                 }
-            } else if (cmd.includes('index=')) {
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
+            }
+            
+            // STEP 2 → STEP 3: Reconnaissance (any nmap command)
+            if (lowerCmd.includes('nmap')) {
+                term.writeln('\x1b[2;37mStarting Nmap 7.94\x1b[0m');
+                term.writeln('\x1b[2;37mPORT   STATE SERVICE\x1b[0m');
+                term.writeln('\x1b[2;37m80/tcp open  http\x1b[0m');
+                if (currentStep === 1) {
+                    term.writeln('\x1b[1;32mPort 80 is open. Now exploit the vulnerability.\x1b[0m');
+                    currentStep = 2;
+                    updateTasks(currentStep);
+                    failedAttempts = 0;
+                }
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
+            }
+            
+            // STEP 3 → STEP 4: Exploit Vulnerability (any curl with OR 1=1 pattern)
+            if (lowerCmd.includes('curl') && (lowerCmd.includes('or') || lowerCmd.includes('%20or'))) {
+                term.writeln('\x1b[1;32mFLAG-FOUND: You retrieved 2 users! Data: [(1, \'admin\', \'secretpass\'), (2, \'john\', \'doe123\')]\x1b[0m');
+                captureFlag();
+                failedAttempts = 0;
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
+            }
+            
+            // STEP 4 → STEP 5: Blue Team (any index= command)
+            if (lowerCmd.includes('index=')) {
                 term.writeln('\x1b[2;37mFound 1 event\x1b[0m');
                 term.writeln('\x1b[2;37m2026-07-29 14:32:22 FLAG-FOUND: admin\x1b[0m');
                 if (currentStep === 4) {
-                    term.writeln('\x1b[1;32m Found the flag in Splunk. Write a detection rule.\x1b[0m');
+                    term.writeln('\x1b[1;32mFound the flag in Splunk. Write a detection rule.\x1b[0m');
                     currentStep = 5;
                     updateTasks(currentStep);
                 }
-            } else if (cmd === 'help') {
-                term.writeln('\x1b[2;37mCommands: nmap, curl, cat, index=main, help, clear\x1b[0m');
-            } else if (cmd === 'clear') {
-                term.clear();
-            } else {
-                failedAttempts++;
-                term.writeln('\x1b[2;37mCommand not recognized. Try: nmap, curl, cat, index=main, help, clear\x1b[0m');
-                if (failedAttempts >= 2) {
-                    fetchAIHint('failure', failedAttempts);
-                }
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
             }
-            term.write('\x1b[1;32m$ \x1b[0m');
-            lastCommandTime = Date.now();
+            
+            // ... rest of your command handling
         }
 
         function sendCommand(cmd) {
@@ -740,15 +744,15 @@
         function loadMissions() {
             const grid = document.getElementById('missions-grid');
             grid.innerHTML = '<div class="empty-state"><div class="icon">[ ]</div><div>Loading...</div></div>';
-            fetch(`${API_BASE}/vulnerabilities/top?limit=20`)
+            fetch(API_BASE + '/vulnerabilities/top?limit=20')
                 .then(res => res.json())
                 .then(data => {
                     if (data.error) {
-                        grid.innerHTML = `<div class="empty-state"><div class="icon">⚠</div><div>Error: ${data.error}</div></div>`;
+                        grid.innerHTML = '<div class="empty-state"><div class="icon">[!]</div><div>Error: ' + data.error + '</div></div>';
                         return;
                     }
                     if (!data.vulnerabilities || data.vulnerabilities.length === 0) {
-                        grid.innerHTML = `<div class="empty-state"><div class="icon">[ ]</div><div>No missions</div><div class="sub">Click "Import Scanner"</div></div>`;
+                        grid.innerHTML = '<div class="empty-state"><div class="icon">[ ]</div><div>No missions</div><div class="sub">Click "Import Scanner"</div></div>';
                         document.getElementById('total-count').textContent = '0';
                         document.getElementById('active-count').textContent = '0';
                         document.getElementById('archived-count').textContent = '0';
@@ -763,7 +767,7 @@
                     renderMissions();
                 })
                 .catch(err => {
-                    grid.innerHTML = `<div class="empty-state"><div class="icon">⚠</div><div>${err.message}</div></div>`;
+                    grid.innerHTML = '<div class="empty-state"><div class="icon">[!]</div><div>' + err.message + '</div></div>';
                 });
         }
 
@@ -772,7 +776,7 @@
             const list = currentTab === 'active' ? activeMissions : archivedMissions;
             
             if (list.length === 0) {
-                grid.innerHTML = `<div class="empty-state"><div class="icon">[ ]</div><div>No ${currentTab} missions</div></div>`;
+                grid.innerHTML = '<div class="empty-state"><div class="icon">[ ]</div><div>No ' + currentTab + ' missions</div></div>';
                 return;
             }
             
@@ -781,19 +785,18 @@
                 const card = document.createElement('div');
                 card.className = 'mission-card';
                 const sev = vuln.severity ? vuln.severity.toLowerCase() : 'medium';
-                card.innerHTML = `
-                    <div class="card-header">
-                        <span class="cve-id">${vuln.cve_id || 'Unknown'}</span>
-                        <span class="severity severity-${sev}">${vuln.severity || 'Unknown'}</span>
-                    </div>
-                    <div class="asset">${vuln.asset || 'Unknown Asset'}</div>
-                    <div class="description">${vuln.description ? vuln.description.substring(0, 150) + '...' : 'No description'}</div>
-                    <div class="card-footer">
-                        <span class="score">Score: <strong>${vuln.interestingness_score || '?'}/10</strong></span>
-                        <span class="status-badge ${currentTab}">${currentTab}</span>
-                    </div>
-                    <button class="start-btn" onclick="showMissionBrief(${vuln.id})">Start Mission</button>
-                `;
+                card.innerHTML = 
+                    '<div class="card-header">' +
+                        '<span class="cve-id">' + (vuln.cve_id || 'Unknown') + '</span>' +
+                        '<span class="severity severity-' + sev + '">' + (vuln.severity || 'Unknown') + '</span>' +
+                    '</div>' +
+                    '<div class="asset">' + (vuln.asset || 'Unknown Asset') + '</div>' +
+                    '<div class="description">' + (vuln.description ? vuln.description.substring(0, 150) + '...' : 'No description') + '</div>' +
+                    '<div class="card-footer">' +
+                        '<span class="score">Score: <strong>' + (vuln.interestingness_score || '?') + '/10</strong></span>' +
+                        '<span class="status-badge ' + currentTab + '">' + currentTab + '</span>' +
+                    '</div>' +
+                    '<button class="start-btn" onclick="showMissionBrief(' + vuln.id + ')">Start Mission</button>';
                 grid.appendChild(card);
             });
         }
@@ -801,7 +804,7 @@
         function switchTab(tab) {
             currentTab = tab;
             document.querySelectorAll('.tab-bar .tab').forEach(el => el.classList.remove('active'));
-            document.getElementById(`tab-${tab}`).classList.add('active');
+            document.getElementById('tab-' + tab).classList.add('active');
             renderMissions();
         }
 
@@ -816,7 +819,7 @@
             document.getElementById('modal-enter-btn').disabled = true;
             document.getElementById('modal-enter-btn').textContent = 'Loading...';
 
-            fetch(`${API_BASE}/missions/${id}/start`, { method: 'POST' })
+            fetch(API_BASE + '/missions/' + id + '/start', { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     if (data.error) {
@@ -869,11 +872,11 @@
             
             seconds = 0;
             if (timerInterval) clearInterval(timerInterval);
-            timerInterval = setInterval(() => {
+            timerInterval = setInterval(function() {
                 seconds++;
-                const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
-                const secs = String(seconds % 60).padStart(2, '0');
-                document.getElementById('mission-timer').textContent = `${mins}:${secs}`;
+                var mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+                var secs = String(seconds % 60).padStart(2, '0');
+                document.getElementById('mission-timer').textContent = mins + ':' + secs;
             }, 1000);
 
             flagCaptured = false;
@@ -888,8 +891,7 @@
             lastCommands = [];
             hintTriggered = false;
 
-            // Reset hint to default
-            document.getElementById('help-hint').innerHTML = `<span class="hint-icon">💡</span> AI hints will appear here when you're stuck or idle.`;
+            document.getElementById('help-hint').innerHTML = 'AI hints will appear here when you\'re stuck or idle.';
 
             if (term) {
                 term.clear();
@@ -908,7 +910,7 @@
         }
 
         function updateTasks(step) {
-            const tasks = [
+            var tasks = [
                 'Review Brief & Impact',
                 'Reconnaissance',
                 'Exploit Vulnerability',
@@ -916,28 +918,28 @@
                 'Blue Team Investigation',
                 'Submit Rule & Report'
             ];
-            const list = document.getElementById('task-list');
+            var list = document.getElementById('task-list');
             list.innerHTML = '';
-            tasks.forEach((label, i) => {
-                const div = document.createElement('div');
+            tasks.forEach(function(label, i) {
+                var div = document.createElement('div');
                 div.className = 'task-item';
                 if (i < step) div.classList.add('completed');
                 if (i === step) div.classList.add('active');
-                const icon = i < step ? '✓' : (i === step ? '►' : '○');
-                div.innerHTML = `<span class="step-icon">${icon}</span> ${label}`;
+                var icon = i < step ? '✓' : (i === step ? '►' : '○');
+                div.innerHTML = '<span class="step-icon">' + icon + '</span> ' + label;
                 list.appendChild(div);
             });
-            document.getElementById('mission-step').textContent = `Step ${step+1} of ${tasks.length}`;
+            document.getElementById('mission-step').textContent = 'Step ' + (step+1) + ' of ' + tasks.length;
         }
 
         function switchWorkspace(tab) {
             currentWorkspace = tab;
-            document.querySelectorAll('.workspace-tabs .wtab').forEach(el => el.classList.remove('active'));
-            document.getElementById(`wtab-${tab}`).classList.add('active');
+            document.querySelectorAll('.workspace-tabs .wtab').forEach(function(el) { el.classList.remove('active'); });
+            document.getElementById('wtab-' + tab).classList.add('active');
 
-            const terminal = document.getElementById('terminal-container');
-            const target = document.getElementById('target-container');
-            const splunk = document.getElementById('splunk-container');
+            var terminal = document.getElementById('terminal-container');
+            var target = document.getElementById('target-container');
+            var splunk = document.getElementById('splunk-container');
 
             terminal.classList.add('hidden');
             target.classList.add('hidden');
@@ -945,11 +947,11 @@
 
             if (tab === 'terminal') {
                 terminal.classList.remove('hidden');
-                setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 100);
-            } else if (tab === 'target') target.classList.remove('hidden');
+                setTimeout(function() { if (fitAddon) fitAddon.fit(); }, 100);
+            } else if (tab === 'target') { target.classList.remove('hidden'); }
             else if (tab === 'splunk') {
                 splunk.classList.remove('hidden');
-                const iframe = document.getElementById('splunk-iframe');
+                var iframe = document.getElementById('splunk-iframe');
                 if (iframe.src === 'about:blank') iframe.src = 'https://www.splunk.com/';
             }
         }
@@ -959,7 +961,7 @@
             flagCaptured = true;
             document.getElementById('submit-report-btn').disabled = false;
             document.getElementById('wtab-splunk').classList.remove('disabled');
-            const blueSection = document.getElementById('blue-team-section');
+            var blueSection = document.getElementById('blue-team-section');
             blueSection.classList.add('active');
             document.getElementById('blue-brief-text').textContent = currentMissionData.blue_team_brief || 'Blue Team: Investigate the logs in Splunk and write a detection rule.';
             currentStep = 4;
@@ -968,16 +970,16 @@
         }
 
         function submitRule() {
-            const input = document.getElementById('rule-input');
-            const result = document.getElementById('rule-result');
-            const rule = input.value.trim();
+            var input = document.getElementById('rule-input');
+            var result = document.getElementById('rule-result');
+            var rule = input.value.trim();
             if (!rule) {
                 result.textContent = 'Please write a detection rule.';
                 result.style.color = '#c05050';
                 return;
             }
             if (rule.toLowerCase().includes('sql') || rule.toLowerCase().includes('or 1=1') || rule.toLowerCase().includes('alert')) {
-                result.textContent = 'Rule validated! The attack is blocked. Proceed to submit your report.';
+                result.textContent = 'Rule validated. The attack is blocked. Proceed to submit your report.';
                 result.style.color = '#1a8a4a';
                 currentStep = 5;
                 updateTasks(currentStep);
@@ -993,7 +995,7 @@
                 alert('You must capture the flag before submitting the report.');
                 return;
             }
-            alert(' Report submitted successfully!\n\nMission Complete!\n\nRed Team: Flag captured\nBlue Team: Detection rule validated');
+            alert('Report submitted successfully!\n\nMission Complete!\n\nRed Team: Flag captured\nBlue Team: Detection rule validated');
             exitMission();
         }
 
@@ -1011,8 +1013,7 @@
             document.getElementById('submit-report-btn').disabled = true;
             document.getElementById('wtab-splunk').classList.add('disabled');
             
-            // Reset hint
-            document.getElementById('help-hint').innerHTML = `<span class="hint-icon"></span> AI hints will appear here when you're stuck or idle.`;
+            document.getElementById('help-hint').innerHTML = 'AI hints will appear here when you\'re stuck or idle.';
             document.getElementById('help-brief').textContent = 'Start a mission to see the brief here.';
             document.getElementById('help-impact').textContent = 'Impact information will appear here.';
             
@@ -1021,16 +1022,16 @@
         }
 
         function runImport() {
-            const btn = document.getElementById('import-btn');
-            const dot = document.getElementById('status-dot');
-            const text = document.getElementById('status-text');
+            var btn = document.getElementById('import-btn');
+            var dot = document.getElementById('status-dot');
+            var text = document.getElementById('status-text');
             btn.disabled = true;
             btn.textContent = 'Importing...';
             dot.className = 'dot warning';
             text.textContent = 'Importing...';
-            fetch(`${API_BASE}/admin/import`, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
+            fetch(API_BASE + '/admin/import', { method: 'POST' })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
                     btn.disabled = false;
                     btn.textContent = 'Import Scanner';
                     if (data.status === 'success') {
@@ -1042,7 +1043,7 @@
                         text.textContent = 'Failed';
                     }
                 })
-                .catch(err => {
+                .catch(function(err) {
                     btn.disabled = false;
                     btn.textContent = 'Import Scanner';
                     dot.className = 'dot error';
