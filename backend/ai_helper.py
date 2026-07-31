@@ -78,16 +78,26 @@ def generate_blue_team_brief(cve_id: str, description: str) -> str:
     """Generate a Blue Team mission brief by summarizing the CVE description."""
     
     prompt = f"""
-You are a professional cybersecurity trainer writing a Blue Team mission brief.
+You are a professional cybersecurity trainer writing a BLUE TEAM MISSION BRIEF.
 
-Write a single sentence that:
+Write a single paragraph that:
 1. Explains what the vulnerability is
-2. States the Blue Team objective (investigate logs, find traces, write a rule)
+2. States the Blue Team objective: investigate Splunk logs to find attack traces
+3. Explicitly mentions using Splunk log analysis
+4. States they must write a detection rule
 
 Vulnerability Description: {description}
 
-Example format (DO NOT COPY):
-"Investigate the logs from the stored XSS attack on OpenCTI. Locate the attack traces and write a detection rule to prevent session theft."
+IMPORTANT REQUIREMENTS:
+- MUST mention Splunk log analysis
+- MUST mention writing a detection rule
+- Be professional and clear
+- Do NOT mention the CVE number
+
+Example format (DO NOT COPY – use as style guide):
+"Your mission is to investigate the Splunk logs from the stored XSS attack on OpenCTI. You must locate the attack traces in the Splunk logs and write a detection rule to prevent session theft. Use Splunk search queries to identify the malicious payload and the affected users."
+
+Now generate a UNIQUE Blue Team mission brief for this vulnerability that includes Splunk log analysis:
 
 Blue Team Brief:
 """

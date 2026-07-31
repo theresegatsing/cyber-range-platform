@@ -8,6 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
     <style>
+        /* === STYLES (same as before) === */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -386,7 +387,7 @@
             <div class="mission-header">
                 <div class="title">Mission: <span id="mission-title">Loading...</span></div>
                 <div class="progress-info">
-                    <span id="mission-step">Step 1 of 6</span>
+                    <span id="mission-step">Step 1 of 4</span>
                     <span class="timer" id="mission-timer">00:00</span>
                     <button class="btn btn-secondary" onclick="forceNextStep()" style="padding:4px 12px;font-size:12px;">Skip Step</button>
                 </div>
@@ -462,7 +463,7 @@
         let timerInterval = null;
         let seconds = 0;
         let currentStep = 0;
-        const totalSteps = 6;
+        const totalSteps = 4;
 
         let term = null;
         let fitAddon = null;
@@ -527,7 +528,7 @@
                 if (!isMissionActive) return;
                 if (!currentMissionData) return;
                 if (flagCaptured) return;
-                if (currentStep >= 5) return;
+                if (currentStep >= 3) return;
                 const idleTime = (Date.now() - lastCommandTime) / 1000;
                 if (idleTime > 60 && !hintTriggered) {
                     hintTriggered = true;
@@ -641,6 +642,45 @@
             }
         }
 
+        function forceNextStep() {
+            if (currentStep < 3) {
+                var nextStep = currentStep + 1;
+                
+                // If moving from Step 1 to Step 2 (Blue Team), simulate flag capture
+                if (nextStep === 2) {
+                    // If flag not captured yet, simulate it
+                    if (!flagCaptured) {
+                        flagCaptured = true;
+                        term.writeln('\x1b[1;32mFLAG CAPTURED! (Simulated for skip)\x1b[0m');
+                    }
+                    
+                    term.writeln('\x1b[1;32mStarting Blue Team phase...\x1b[0m');
+                    
+                    // Show Blue Team section
+                    var blueSection = document.getElementById('blue-team-section');
+                    blueSection.classList.add('active');
+                    
+                    var blueBriefText = currentMissionData.blue_team_brief || 'Your mission is to investigate the logs from the attack in Splunk. You must locate the attack traces and write a detection rule to prevent future exploitation.';
+                    document.getElementById('blue-brief-text').textContent = blueBriefText;
+                    document.getElementById('help-brief').textContent = 'Blue Team Phase: ' + blueBriefText;
+                    document.getElementById('wtab-splunk').classList.remove('disabled');
+                    document.getElementById('submit-report-btn').disabled = false;
+                    
+                    currentStep = nextStep;
+                    updateTasks(currentStep);
+                    switchWorkspace('splunk');
+                    term.writeln('\x1b[1;32mBlue Team phase started. Investigate the logs in Splunk.\x1b[0m');
+                }
+                else {
+                    currentStep = nextStep;
+                    updateTasks(currentStep);
+                    term.writeln('\x1b[1;33mAdvanced to Step ' + (currentStep+1) + '\x1b[0m');
+                }
+            } else {
+                alert('Already at final step');
+            }
+        }
+
         function processCommand(cmd) {
             if (!cmd) {
                 term.write('\x1b[1;32m$ \x1b[0m');
@@ -653,34 +693,7 @@
             // DEBUG: Force advance to next step (type "next" in terminal)
             // ============================================================
             if (cmd === 'next') {
-                if (currentStep < 5) {
-                    var nextStep = currentStep + 1;
-                    
-                    // If moving to Step 3 (Blue Team), trigger flag capture
-                    if (nextStep === 3 && !flagCaptured) {
-                        term.writeln('\x1b[1;32mForce advancing to Blue Team phase...\x1b[0m');
-                        captureFlag();
-                    }
-                    // If moving to Step 4 (Submit Rule), show Blue Team section
-                    else if (nextStep === 4) {
-                        term.writeln('\x1b[1;32mForce advancing to Rule Submission phase...\x1b[0m');
-                        // Make sure Blue Team section is visible
-                        var blueSection = document.getElementById('blue-team-section');
-                        blueSection.classList.add('active');
-                        document.getElementById('blue-brief-text').textContent = currentMissionData.blue_team_brief || 'Blue Team: Investigate the logs and write a detection rule.';
-                        document.getElementById('wtab-splunk').classList.remove('disabled');
-                        document.getElementById('submit-report-btn').disabled = false;
-                        currentStep = nextStep;
-                        updateTasks(currentStep);
-                    }
-                    else {
-                        currentStep = nextStep;
-                        updateTasks(currentStep);
-                        term.writeln('\x1b[1;33mAdvanced to step ' + (currentStep+1) + '\x1b[0m');
-                    }
-                } else {
-                    term.writeln('\x1b[1;33mAlready at final step\x1b[0m');
-                }
+                forceNextStep();
                 term.write('\x1b[1;32m$ \x1b[0m');
                 return;
             }
@@ -727,19 +740,15 @@
             }
             
             // ============================================================
-            // Step 3 → Step 4: Blue Team (index= command)
+            // Step 2 → Step 3: Splunk search advances to final report
             // ============================================================
             if (lowerCmd.includes('index=')) {
                 term.writeln('\x1b[2;37mFound 1 event\x1b[0m');
                 term.writeln('\x1b[2;37m2026-07-29 14:32:22 FLAG-FOUND: admin\x1b[0m');
-                if (currentStep === 3) {
+                if (currentStep === 2) {
                     term.writeln('\x1b[1;32mFound the flag in Splunk. Write a detection rule.\x1b[0m');
-                    currentStep = 4;
+                    currentStep = 3;
                     updateTasks(currentStep);
-                    // Show Blue Team section
-                    var blueSection = document.getElementById('blue-team-section');
-                    blueSection.classList.add('active');
-                    document.getElementById('blue-brief-text').textContent = currentMissionData.blue_team_brief || 'Blue Team: Investigate the logs and write a detection rule.';
                     document.getElementById('submit-report-btn').disabled = false;
                 }
                 term.write('\x1b[1;32m$ \x1b[0m');
@@ -751,6 +760,7 @@
             // ============================================================
             if (cmd === 'help') {
                 term.writeln('\x1b[2;37mCommands: nmap, curl, cat, index=main, help, clear, next\x1b[0m');
+                term.writeln('\x1b[2;37mOr click the "Skip Step" button in the header.\x1b[0m');
                 term.write('\x1b[1;32m$ \x1b[0m');
                 return;
             }
@@ -957,9 +967,7 @@
             var tasks = [
                 'Reconnaissance',
                 'Exploit Vulnerability',
-                'Capture Flag',
                 'Blue Team Investigation',
-                'Submit Detection Rule',
                 'Submit Final Report'
             ];
             var list = document.getElementById('task-list');
@@ -1003,14 +1011,27 @@
         function captureFlag() {
             if (flagCaptured) return;
             flagCaptured = true;
+            
+            // Red Team complete
+            term.writeln('\x1b[1;32mFLAG CAPTURED! Red Team phase complete.\x1b[0m');
+            term.writeln('\x1b[1;33mBlue Team phase is now available. Click "Skip Step" or type "next" to begin.\x1b[0m');
+            
+            // Enable Blue Team features
             document.getElementById('submit-report-btn').disabled = false;
             document.getElementById('wtab-splunk').classList.remove('disabled');
+            
+            // Prepare Blue Team section
             var blueSection = document.getElementById('blue-team-section');
             blueSection.classList.add('active');
-            document.getElementById('blue-brief-text').textContent = currentMissionData.blue_team_brief || 'Blue Team: Investigate the logs in Splunk and write a detection rule.';
-            currentStep = 3;
+            var blueBriefText = currentMissionData.blue_team_brief || 'Your mission is to investigate the logs from the attack in Splunk. You must locate the attack traces and write a detection rule to prevent future exploitation.';
+            document.getElementById('blue-brief-text').textContent = blueBriefText;
+            
+            // Set current step to 2 (Blue Team)
+            currentStep = 2;
             updateTasks(currentStep);
-            switchWorkspace('splunk');
+            
+            // Don't auto-switch to Splunk - let learner choose
+            document.getElementById('help-hint').innerHTML = 'Red Team complete. Begin Blue Team investigation when ready.';
         }
 
         function submitRule() {
@@ -1025,7 +1046,7 @@
             if (rule.toLowerCase().includes('sql') || rule.toLowerCase().includes('or 1=1') || rule.toLowerCase().includes('alert')) {
                 result.textContent = 'Rule validated. The attack is blocked. Proceed to submit your report.';
                 result.style.color = '#1a8a4a';
-                currentStep = 5;
+                currentStep = 3;
                 updateTasks(currentStep);
                 document.getElementById('submit-report-btn').disabled = false;
             } else {
