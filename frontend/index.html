@@ -324,15 +324,6 @@
             max-height: 200px;
             overflow-y: auto;
         }
-        .panel-help .help-content .impact-text {
-            background: #fff3e0;
-            padding: 12px 16px;
-            border-radius: 6px;
-            border-left: 4px solid #c08030;
-            font-size: 13px;
-            line-height: 1.6;
-            color: #5a4a1a;
-        }
         
         .mission-footer { display: flex; gap: 12px; padding: 10px 0 0 0; flex-shrink: 0; }
         .hidden { display: none !important; }
@@ -397,6 +388,7 @@
                 <div class="progress-info">
                     <span id="mission-step">Step 1 of 6</span>
                     <span class="timer" id="mission-timer">00:00</span>
+                    <button class="btn btn-secondary" onclick="forceNextStep()" style="padding:4px 12px;font-size:12px;">Skip Step</button>
                 </div>
                 <button class="exit-btn" onclick="exitMission()">Exit</button>
             </div>
@@ -447,9 +439,6 @@
                         <div class="hint" id="help-hint">
                             AI hints will appear here when you're stuck or idle.
                         </div>
-                        
-                        <div style="font-weight:600;font-size:13px;color:#1a2a3a;margin-top:12px;margin-bottom:4px;">Impact</div>
-                        <div class="impact-text" id="help-impact">Impact information will appear here.</div>
                     </div>
                 </div>
             </div>
@@ -658,19 +647,50 @@
                 return;
             }
             
-            // Make everything case-insensitive
             const lowerCmd = cmd.toLowerCase();
             
-            // STEP 1 → STEP 2: Review Brief
+            // ============================================================
+            // DEBUG: Force advance to next step (type "next" in terminal)
+            // ============================================================
+            if (cmd === 'next') {
+                if (currentStep < 5) {
+                    var nextStep = currentStep + 1;
+                    
+                    // If moving to Step 3 (Blue Team), trigger flag capture
+                    if (nextStep === 3 && !flagCaptured) {
+                        term.writeln('\x1b[1;32mForce advancing to Blue Team phase...\x1b[0m');
+                        captureFlag();
+                    }
+                    // If moving to Step 4 (Submit Rule), show Blue Team section
+                    else if (nextStep === 4) {
+                        term.writeln('\x1b[1;32mForce advancing to Rule Submission phase...\x1b[0m');
+                        // Make sure Blue Team section is visible
+                        var blueSection = document.getElementById('blue-team-section');
+                        blueSection.classList.add('active');
+                        document.getElementById('blue-brief-text').textContent = currentMissionData.blue_team_brief || 'Blue Team: Investigate the logs and write a detection rule.';
+                        document.getElementById('wtab-splunk').classList.remove('disabled');
+                        document.getElementById('submit-report-btn').disabled = false;
+                        currentStep = nextStep;
+                        updateTasks(currentStep);
+                    }
+                    else {
+                        currentStep = nextStep;
+                        updateTasks(currentStep);
+                        term.writeln('\x1b[1;33mAdvanced to step ' + (currentStep+1) + '\x1b[0m');
+                    }
+                } else {
+                    term.writeln('\x1b[1;33mAlready at final step\x1b[0m');
+                }
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
+            }
+            
+            // ============================================================
+            // Show brief (does NOT advance step)
+            // ============================================================
             if (lowerCmd.includes('cat') && lowerCmd.includes('brief')) {
                 if (currentMissionData?.red_team_brief) {
                     term.writeln('\x1b[2;37m' + currentMissionData.red_team_brief + '\x1b[0m');
-                    if (currentStep === 0) {
-                        term.writeln('\x1b[1;32mBrief reviewed. Proceed to reconnaissance.\x1b[0m');
-                        currentStep = 1;
-                        updateTasks(currentStep);
-                        failedAttempts = 0;
-                    }
                 } else {
                     term.writeln('\x1b[2;37mNo brief available.\x1b[0m');
                 }
@@ -678,14 +698,16 @@
                 return;
             }
             
-            // STEP 2 → STEP 3: Reconnaissance (any nmap command)
+            // ============================================================
+            // Step 0 → Step 1: Reconnaissance (any nmap command)
+            // ============================================================
             if (lowerCmd.includes('nmap')) {
                 term.writeln('\x1b[2;37mStarting Nmap 7.94\x1b[0m');
                 term.writeln('\x1b[2;37mPORT   STATE SERVICE\x1b[0m');
                 term.writeln('\x1b[2;37m80/tcp open  http\x1b[0m');
-                if (currentStep === 1) {
+                if (currentStep === 0) {
                     term.writeln('\x1b[1;32mPort 80 is open. Now exploit the vulnerability.\x1b[0m');
-                    currentStep = 2;
+                    currentStep = 1;
                     updateTasks(currentStep);
                     failedAttempts = 0;
                 }
@@ -693,7 +715,9 @@
                 return;
             }
             
-            // STEP 3 → STEP 4: Exploit Vulnerability (any curl with OR 1=1 pattern)
+            // ============================================================
+            // Step 1 → Step 2: Exploit Vulnerability (curl with OR 1=1)
+            // ============================================================
             if (lowerCmd.includes('curl') && (lowerCmd.includes('or') || lowerCmd.includes('%20or'))) {
                 term.writeln('\x1b[1;32mFLAG-FOUND: You retrieved 2 users! Data: [(1, \'admin\', \'secretpass\'), (2, \'john\', \'doe123\')]\x1b[0m');
                 captureFlag();
@@ -702,20 +726,50 @@
                 return;
             }
             
-            // STEP 4 → STEP 5: Blue Team (any index= command)
+            // ============================================================
+            // Step 3 → Step 4: Blue Team (index= command)
+            // ============================================================
             if (lowerCmd.includes('index=')) {
                 term.writeln('\x1b[2;37mFound 1 event\x1b[0m');
                 term.writeln('\x1b[2;37m2026-07-29 14:32:22 FLAG-FOUND: admin\x1b[0m');
-                if (currentStep === 4) {
+                if (currentStep === 3) {
                     term.writeln('\x1b[1;32mFound the flag in Splunk. Write a detection rule.\x1b[0m');
-                    currentStep = 5;
+                    currentStep = 4;
                     updateTasks(currentStep);
+                    // Show Blue Team section
+                    var blueSection = document.getElementById('blue-team-section');
+                    blueSection.classList.add('active');
+                    document.getElementById('blue-brief-text').textContent = currentMissionData.blue_team_brief || 'Blue Team: Investigate the logs and write a detection rule.';
+                    document.getElementById('submit-report-btn').disabled = false;
                 }
                 term.write('\x1b[1;32m$ \x1b[0m');
                 return;
             }
             
-            // ... rest of your command handling
+            // ============================================================
+            // Help and Clear commands
+            // ============================================================
+            if (cmd === 'help') {
+                term.writeln('\x1b[2;37mCommands: nmap, curl, cat, index=main, help, clear, next\x1b[0m');
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
+            }
+            
+            if (cmd === 'clear') {
+                term.clear();
+                term.write('\x1b[1;32m$ \x1b[0m');
+                return;
+            }
+            
+            // ============================================================
+            // Unknown command – increment failure count
+            // ============================================================
+            failedAttempts++;
+            term.writeln('\x1b[2;37mCommand not recognized. Try: nmap, curl, cat, index=main, help, clear, next\x1b[0m');
+            if (failedAttempts >= 2) {
+                fetchAIHint('failure', failedAttempts);
+            }
+            term.write('\x1b[1;32m$ \x1b[0m');
         }
 
         function sendCommand(cmd) {
@@ -835,21 +889,11 @@
                     document.getElementById('modal-enter-btn').textContent = 'Enter Mission';
                     
                     document.getElementById('help-brief').textContent = data.red_team_brief || 'No brief available.';
-                    const impact = extractImpact(data.red_team_brief || '');
-                    document.getElementById('help-impact').textContent = impact;
                 })
                 .catch(err => {
                     document.getElementById('modal-red-brief').textContent = 'Error: ' + err.message;
                     document.getElementById('modal-enter-btn').disabled = true;
                 });
-        }
-
-        function extractImpact(brief) {
-            const sentences = brief.split('. ');
-            if (sentences.length >= 2) {
-                return sentences.slice(1, 3).join('. ') || 'Unauthorized access and data compromise.';
-            }
-            return 'Unauthorized access and data compromise.';
         }
 
         function closeModal() {
@@ -911,12 +955,12 @@
 
         function updateTasks(step) {
             var tasks = [
-                'Review Brief & Impact',
                 'Reconnaissance',
                 'Exploit Vulnerability',
                 'Capture Flag',
                 'Blue Team Investigation',
-                'Submit Rule & Report'
+                'Submit Detection Rule',
+                'Submit Final Report'
             ];
             var list = document.getElementById('task-list');
             list.innerHTML = '';
@@ -964,7 +1008,7 @@
             var blueSection = document.getElementById('blue-team-section');
             blueSection.classList.add('active');
             document.getElementById('blue-brief-text').textContent = currentMissionData.blue_team_brief || 'Blue Team: Investigate the logs in Splunk and write a detection rule.';
-            currentStep = 4;
+            currentStep = 3;
             updateTasks(currentStep);
             switchWorkspace('splunk');
         }
@@ -1015,7 +1059,6 @@
             
             document.getElementById('help-hint').innerHTML = 'AI hints will appear here when you\'re stuck or idle.';
             document.getElementById('help-brief').textContent = 'Start a mission to see the brief here.';
-            document.getElementById('help-impact').textContent = 'Impact information will appear here.';
             
             currentMissionData = null;
             renderMissions();
