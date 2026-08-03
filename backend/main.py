@@ -277,20 +277,28 @@ def run_scanner_import():
         import subprocess
         import sys
         
+        print("📂 Running scanner_import.py from:", os.path.dirname(__file__))
         result = subprocess.run(
             [sys.executable, "scanner_import.py"],
             cwd=os.path.dirname(__file__),
             capture_output=True,
             text=True,
-            timeout=1200
+            timeout=3600
         )
+        print(f"📤 Return code: {result.returncode}")
+        if result.stdout:
+            print(f"📤 Stdout: {result.stdout[:500]}...")
+        if result.stderr:
+            print(f"📤 Stderr: {result.stderr[:500]}...")
         
         return {
             "status": "success" if result.returncode == 0 else "error",
             "output": result.stdout,
-            "error": result.stderr if result.stderr else None
+            "error": result.stderr if result.stderr else None,
+            "returncode": result.returncode
         }
     except subprocess.TimeoutExpired:
-        return {"status": "error", "message": "Import timed out after 20 minutes"}
+        return {"status": "error", "message": "Import timed out after 60 minutes"}
     except Exception as e:
+        print(f"❌ Import exception: {str(e)}")
         return {"status": "error", "message": str(e)}

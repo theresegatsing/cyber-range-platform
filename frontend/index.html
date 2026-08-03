@@ -8,223 +8,484 @@
     <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
     <style>
-        /* === STYLES === */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f0f2f5;
-            color: #1a2a3a;
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            background: #f5f0eb;
+            color: #1e293b;
             height: 100vh;
             overflow: hidden;
         }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #e8ecf0; }
-        ::-webkit-scrollbar-thumb { background: #b0bcc8; border-radius: 4px; }
-        
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #e8e0d8; }
+        ::-webkit-scrollbar-thumb { background: #0d9488; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #0f766e; }
         .app-container {
             display: flex;
             flex-direction: column;
             height: 100vh;
-            padding: 16px;
+            padding: 16px 20px;
             gap: 12px;
         }
-        
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             padding: 12px 24px;
             background: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+            border: 1px solid #e8e0d8;
             flex-shrink: 0;
-            border: 1px solid #e0e6ec;
         }
-        .header-logo h1 { font-size: 22px; font-weight: 600; color: #1a2a3a; }
-        .header-logo h1 span { color: #0066cc; }
-        .header-actions { display: flex; gap: 10px; align-items: center; }
-        .header-actions .status { font-size: 13px; color: #4a6a8a; }
-        .header-actions .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4a9a6a; margin-right: 6px; }
-        .header-actions .status .dot.warning { background: #d4a04a; }
-        .header-actions .status .dot.error { background: #c05050; }
-        
+        .header-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header-logo .logo-icon {
+            width: 34px;
+            height: 34px;
+            background: #0d9488;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            color: #ffffff;
+        }
+        .header-logo h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1e293b;
+            letter-spacing: 0.5px;
+        }
+        .header-logo h1 span { color: #0d9488; }
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            color: #64748b;
+        }
+        .header-status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            background: #10b981;
+            animation: pulse-dot 2s infinite;
+        }
+        .header-status .dot.warning { background: #f59e0b; }
+        .header-status .dot.error { background: #ef4444; }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
+        }
+        .header-actions { display: flex; gap: 10px; }
         .btn {
-            padding: 8px 18px;
+            padding: 7px 18px;
             border: none;
             border-radius: 6px;
-            font-size: 13px;
-            font-weight: 500;
+            font-size: 12px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s;
             font-family: inherit;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
         }
-        .btn-primary { background: #0066cc; color: #ffffff; }
-        .btn-primary:hover { background: #0055aa; }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary { background: #e8ecf0; color: #1a2a3a; }
-        .btn-secondary:hover { background: #d0d8e0; }
-        .btn-success { background: #1a8a4a; color: #ffffff; }
-        .btn-success:hover { background: #147a3a; }
-        .btn-warning { background: #d4a04a; color: #ffffff; }
-        .btn-warning:hover { background: #c09030; }
-        
+        .btn-primary {
+            background: #0d9488;
+            color: #ffffff;
+        }
+        .btn-primary:hover {
+            background: #0f766e;
+            transform: translateY(-1px);
+        }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-secondary {
+            background: #f1edf0;
+            color: #475569;
+            border: 1px solid #e2dcd5;
+        }
+        .btn-secondary:hover {
+            background: #e8e0d8;
+            color: #1e293b;
+        }
+        .btn-success {
+            background: #10b981;
+            color: #ffffff;
+        }
+        .btn-success:hover {
+            background: #059669;
+            transform: translateY(-1px);
+        }
+        .btn-warning {
+            background: #f59e0b;
+            color: #ffffff;
+        }
+        .btn-warning:hover {
+            background: #d97706;
+            transform: translateY(-1px);
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: #ffffff;
+        }
+        .btn-danger:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+        }
         .tab-bar {
             display: flex;
             gap: 4px;
             background: #ffffff;
             padding: 4px;
-            border-radius: 8px;
-            border: 1px solid #e0e6ec;
+            border-radius: 10px;
+            border: 1px solid #e8e0d8;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
             flex-shrink: 0;
         }
         .tab-bar .tab {
-            padding: 10px 24px;
+            padding: 8px 20px;
             border: none;
             background: transparent;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
-            color: #6a7a8a;
+            color: #64748b;
             cursor: pointer;
             border-radius: 6px;
-            transition: all 0.2s;
+            transition: all 0.3s;
             font-family: inherit;
         }
-        .tab-bar .tab:hover { background: #f0f4f8; color: #1a2a3a; }
-        .tab-bar .tab.active { background: #0066cc; color: #ffffff; }
-        
-        .view-dashboard { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-        .view-dashboard .stats { display: flex; gap: 20px; padding: 12px 0; flex-shrink: 0; }
-        .view-dashboard .stats .stat-item { font-size: 14px; color: #4a5a6a; }
-        .view-dashboard .stats .stat-item strong { color: #1a2a3a; font-weight: 600; }
-        
+        .tab-bar .tab:hover {
+            color: #1e293b;
+            background: #f5f0eb;
+        }
+        .tab-bar .tab.active {
+            background: #0d9488;
+            color: #ffffff;
+        }
+        .view-dashboard {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .view-dashboard .stats {
+            display: flex;
+            gap: 24px;
+            padding: 10px 0;
+            flex-shrink: 0;
+        }
+        .view-dashboard .stats .stat-item {
+            font-size: 13px;
+            color: #64748b;
+        }
+        .view-dashboard .stats .stat-item strong {
+            color: #1e293b;
+            font-weight: 600;
+        }
+        .view-dashboard .stats .stat-item .num { color: #0d9488; }
         .missions-grid {
             flex: 1;
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 16px;
             overflow-y: auto;
-            padding: 4px 0 16px 0;
+            padding: 4px 0 12px 0;
             align-content: start;
         }
-        
         .mission-card {
             background: #ffffff;
-            border-radius: 10px;
-            padding: 20px;
-            border: 1px solid #e0e6ec;
-            transition: all 0.2s;
+            border-radius: 12px;
+            padding: 20px 22px;
+            border: 1px solid #e8e0d8;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            transition: all 0.35s;
+            cursor: pointer;
         }
-        .mission-card:hover { border-color: #0066cc; box-shadow: 0 4px 16px rgba(0,102,204,0.08); transform: translateY(-2px); }
-        .mission-card .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
-        .mission-card .cve-id { font-size: 16px; font-weight: 600; color: #1a2a3a; }
-        .mission-card .severity { padding: 2px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-        .severity-critical { background: #fce8e8; color: #c05050; }
-        .severity-high { background: #fdf0e0; color: #c08030; }
-        .severity-medium { background: #fdf8e0; color: #b0a030; }
-        .severity-low { background: #e8f4e8; color: #3a8a4a; }
-        .mission-card .asset { font-size: 14px; color: #4a6a8a; margin-bottom: 8px; }
-        .mission-card .description { font-size: 14px; color: #4a5a6a; line-height: 1.5; margin-bottom: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        .mission-card .card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid #f0f2f5; }
-        .mission-card .card-footer .score { font-size: 13px; color: #4a6a8a; }
-        .mission-card .card-footer .score strong { color: #0066cc; }
-        .mission-card .card-footer .status-badge { font-size: 12px; padding: 4px 12px; border-radius: 12px; background: #f0f2f5; color: #6a7a8a; }
-        .mission-card .card-footer .status-badge.active { background: #e8f4e8; color: #1a7a3a; }
-        .mission-card .start-btn { margin-top: 12px; width: 100%; padding: 10px; border: none; border-radius: 6px; background: #0066cc; color: #ffffff; font-weight: 600; font-size: 14px; cursor: pointer; transition: background 0.2s; font-family: inherit; }
-        .mission-card .start-btn:hover { background: #0055aa; }
-        .mission-card .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        
-        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #6a7a8a; font-size: 16px; }
-        .empty-state .icon { font-size: 48px; color: #d0d8e0; margin-bottom: 16px; }
-        .empty-state .sub { font-size: 14px; color: #8a9aaa; }
-        
+        .mission-card:hover {
+            border-color: #0d9488;
+            box-shadow: 0 4px 20px rgba(13,148,136,0.04);
+            transform: translateY(-3px);
+        }
+        .mission-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 6px;
+        }
+        .mission-card .cve-id {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .mission-card .severity {
+            padding: 2px 12px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .severity-critical { background: #fecaca; color: #991b1b; }
+        .severity-high { background: #fde68a; color: #92400e; }
+        .severity-medium { background: #bfdbfe; color: #1e40af; }
+        .severity-low { background: #a7f3d0; color: #065f46; }
+        .mission-card .asset {
+            font-size: 13px;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+        .mission-card .description {
+            font-size: 13px;
+            color: #475569;
+            line-height: 1.5;
+            margin-bottom: 12px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .mission-card .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 12px;
+            border-top: 1px solid #e8e0d8;
+        }
+        .mission-card .card-footer .score {
+            font-size: 12px;
+            color: #64748b;
+        }
+        .mission-card .card-footer .score strong { color: #0d9488; }
+        .mission-card .card-footer .status-badge {
+            font-size: 11px;
+            padding: 3px 12px;
+            border-radius: 12px;
+            background: #f1edf0;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .mission-card .card-footer .status-badge.active {
+            background: #a7f3d0;
+            color: #065f46;
+        }
+        .mission-card .card-footer .status-badge.archived {
+            background: #e8e0d8;
+            color: #64748b;
+        }
+        .mission-card .start-btn {
+            margin-top: 12px;
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            background: #0d9488;
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+        .mission-card .start-btn:hover { background: #0f766e; }
+        .mission-card .start-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #94a3b8;
+            font-size: 16px;
+        }
+        .empty-state .icon {
+            font-size: 48px;
+            color: #cbd5e1;
+            margin-bottom: 16px;
+        }
+        .empty-state .sub {
+            font-size: 14px;
+            color: #cbd5e1;
+        }
         .modal-overlay {
             display: none;
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(30,41,59,0.4);
             z-index: 1000;
             justify-content: center;
             align-items: center;
-            backdrop-filter: blur(4px);
+            backdrop-filter: blur(6px);
         }
         .modal-overlay.active { display: flex; }
         .modal-box {
             background: #ffffff;
-            border-radius: 12px;
-            max-width: 700px;
+            border-radius: 16px;
+            max-width: 680px;
             width: 90%;
-            padding: 40px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px 44px;
+            border: 1px solid #e8e0d8;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
             max-height: 85vh;
             overflow-y: auto;
         }
-        .modal-box h2 { color: #1a2a3a; margin-bottom: 8px; font-size: 22px; }
-        .modal-box .subtitle { color: #4a6a8a; font-size: 14px; margin-bottom: 20px; }
+        .modal-box h2 {
+            color: #1e293b;
+            margin-bottom: 6px;
+            font-size: 22px;
+            font-weight: 600;
+        }
+        .modal-box .subtitle {
+            color: #64748b;
+            font-size: 14px;
+            margin-bottom: 18px;
+        }
         .modal-box .brief-content {
-            background: #f0f6ff;
+            background: #f8f5f2;
             padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #0066cc;
-            margin: 16px 0;
+            border-radius: 10px;
+            border-left: 4px solid #0d9488;
+            margin: 14px 0;
             line-height: 1.8;
-            color: #1a2a3a;
+            color: #1e293b;
             font-size: 15px;
             white-space: pre-wrap;
         }
         .modal-box .brief-content.blue {
-            border-left-color: #d4a04a;
-            background: #fdf8e8;
+            border-left-color: #3b82f6;
             display: none;
         }
-        .modal-box .modal-actions { display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end; }
-        .modal-box .modal-actions .btn { padding: 10px 24px; }
-        
-        .view-mission { flex: 1; display: none; flex-direction: column; min-height: 0; }
+        .modal-box .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+        .modal-box .modal-actions .btn {
+            padding: 10px 24px;
+            font-size: 14px;
+        }
+        .view-mission {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            min-height: 0;
+        }
         .view-mission.active { display: flex; }
-        
         .mission-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 20px;
+            padding: 12px 24px;
             background: #ffffff;
-            border-radius: 8px;
-            border: 1px solid #e0e6ec;
+            border-radius: 10px;
+            border: 1px solid #e8e0d8;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
             flex-shrink: 0;
             margin-bottom: 12px;
         }
-        .mission-header .title { font-size: 18px; font-weight: 600; color: #1a2a3a; }
-        .mission-header .title span { color: #0066cc; }
-        .mission-header .progress-info { display: flex; align-items: center; gap: 20px; font-size: 14px; color: #4a5a6a; }
-        .mission-header .progress-info .timer { color: #0066cc; font-weight: 500; }
-        .mission-header .exit-btn { padding: 6px 16px; border: none; border-radius: 4px; background: #e8ecef; color: #4a5a6a; font-size: 13px; cursor: pointer; font-family: inherit; }
-        .mission-header .exit-btn:hover { background: #d0d8e0; }
-        
-        .mission-layout { flex: 1; display: flex; gap: 12px; min-height: 0; }
-        
+        .mission-header .title {
+            font-size: 17px;
+            font-weight: 500;
+            color: #1e293b;
+        }
+        .mission-header .title span { color: #0d9488; }
+        .mission-header .progress-info {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .mission-header .progress-info .timer {
+            color: #0d9488;
+            font-weight: 500;
+            font-variant-numeric: tabular-nums;
+        }
+        .mission-header .exit-btn {
+            padding: 5px 14px;
+            border: none;
+            border-radius: 4px;
+            background: #f1edf0;
+            color: #64748b;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.3s;
+        }
+        .mission-header .exit-btn:hover {
+            background: #e8e0d8;
+            color: #1e293b;
+        }
+        .mission-layout {
+            flex: 1;
+            display: flex;
+            gap: 12px;
+            min-height: 0;
+        }
         .panel-task {
             width: 200px;
-            min-width: 150px;
+            min-width: 160px;
             background: #ffffff;
-            border-radius: 8px;
-            border: 1px solid #e0e6ec;
+            border-radius: 10px;
+            border: 1px solid #e8e0d8;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
             display: flex;
             flex-direction: column;
             overflow: hidden;
             flex-shrink: 0;
         }
-        .panel-task .panel-header { padding: 12px 16px; border-bottom: 1px solid #e8ecf0; font-weight: 600; font-size: 14px; color: #1a2a3a; flex-shrink: 0; }
-        .panel-task .task-list { flex: 1; overflow-y: auto; padding: 8px 12px; }
-        .panel-task .task-item { padding: 10px 12px; border-radius: 6px; margin-bottom: 4px; font-size: 13px; color: #4a5a6a; border-left: 3px solid transparent; transition: all 0.2s; }
-        .panel-task .task-item.active { background: #f0f6ff; border-left-color: #0066cc; color: #1a2a3a; font-weight: 500; }
-        .panel-task .task-item.completed { color: #6aaa7a; }
-        .panel-task .task-item .step-icon { display: inline-block; width: 20px; text-align: center; margin-right: 8px; }
-        
+        .panel-task .panel-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e8e0d8;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #64748b;
+            flex-shrink: 0;
+        }
+        .panel-task .task-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 12px;
+        }
+        .panel-task .task-item {
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 3px;
+            font-size: 12px;
+            color: #64748b;
+            border-left: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .panel-task .task-item.active {
+            background: #f0fdfa;
+            border-left-color: #0d9488;
+            color: #1e293b;
+        }
+        .panel-task .task-item.completed { color: #10b981; }
+        .panel-task .task-item .step-icon {
+            display: inline-block;
+            width: 18px;
+            text-align: center;
+            margin-right: 6px;
+        }
         .panel-workspace {
             flex: 1;
             background: #ffffff;
-            border-radius: 8px;
-            border: 1px solid #e0e6ec;
+            border-radius: 10px;
+            border: 1px solid #e8e0d8;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -233,117 +494,119 @@
         .panel-workspace .workspace-tabs {
             display: flex;
             gap: 2px;
-            padding: 8px 12px;
-            border-bottom: 1px solid #e8ecf0;
+            padding: 8px 14px;
+            border-bottom: 1px solid #e8e0d8;
             flex-shrink: 0;
-            background: #f8fafc;
+            background: #faf8f6;
         }
         .panel-workspace .workspace-tabs .wtab {
-            padding: 6px 16px;
+            padding: 5px 14px;
             border: none;
             background: transparent;
-            font-size: 13px;
-            color: #6a7a8a;
+            font-size: 12px;
+            color: #64748b;
             cursor: pointer;
             border-radius: 4px;
             font-family: inherit;
-            transition: all 0.2s;
+            transition: all 0.3s;
         }
-        .panel-workspace .workspace-tabs .wtab:hover { background: #e8ecf0; color: #1a2a3a; }
-        .panel-workspace .workspace-tabs .wtab.active { background: #ffffff; color: #1a2a3a; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-        .panel-workspace .workspace-tabs .wtab.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
-        .panel-workspace .workspace-content { flex: 1; padding: 12px; overflow: hidden; display: flex; flex-direction: column; }
+        .panel-workspace .workspace-tabs .wtab:hover {
+            color: #1e293b;
+            background: #f1edf0;
+        }
+        .panel-workspace .workspace-tabs .wtab.active {
+            background: #0d9488;
+            color: #ffffff;
+        }
+        .panel-workspace .workspace-tabs .wtab.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        .panel-workspace .workspace-content {
+            flex: 1;
+            padding: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
         .panel-workspace .workspace-content .terminal-wrapper {
             flex: 1;
-            background: #0d1520;
+            background: #1e293b;
             border-radius: 6px;
             overflow: hidden;
+            border: 1px solid #334155;
         }
         .panel-workspace .workspace-content .terminal-wrapper .xterm {
             padding: 8px;
             height: 100%;
         }
         .panel-workspace .workspace-content .terminal-wrapper .xterm-viewport {
-            background: #0d1520 !important;
+            background: #1e293b !important;
         }
-        .panel-workspace .workspace-content .iframe-container { flex: 1; border: none; border-radius: 4px; background: #f8fafc; min-height: 200px; }
-        .panel-workspace .workspace-content .iframe-container iframe { width: 100%; height: 100%; border: none; }
+        .panel-workspace .workspace-content .iframe-container {
+            flex: 1;
+            border: none;
+            border-radius: 4px;
+            background: #f8f5f2;
+            min-height: 150px;
+        }
+        .panel-workspace .workspace-content .iframe-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
         .panel-workspace .workspace-content .hidden { display: none; }
         .panel-workspace .workspace-content .blue-team-section {
             display: none;
             margin-top: 12px;
             padding: 16px;
-            background: #fdf8e8;
+            background: #f0fdfa;
             border-radius: 8px;
-            border: 1px solid #e8d8a0;
+            border: 1px solid #ccfbf1;
             flex-shrink: 0;
         }
         .panel-workspace .workspace-content .blue-team-section.active { display: block; }
-        .panel-workspace .workspace-content .blue-team-section .blue-brief { color: #1a2a3a; margin-bottom: 12px; font-size: 14px; line-height: 1.6; }
-        .panel-workspace .workspace-content .blue-team-section textarea { width: 100%; padding: 10px; border: 1px solid #d0d8e0; border-radius: 6px; font-family: 'Consolas', monospace; font-size: 13px; min-height: 70px; resize: vertical; }
-        .panel-workspace .workspace-content .blue-team-section .submit-rule-btn { margin-top: 8px; }
-        .panel-workspace .workspace-content .blue-team-section .rule-result { margin-top: 8px; font-weight: 600; }
-        
-        .panel-help {
-            width: 250px;
-            min-width: 180px;
-            background: #ffffff;
-            border-radius: 8px;
-            border: 1px solid #e0e6ec;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            flex-shrink: 0;
-        }
-        .panel-help .panel-header { padding: 12px 16px; border-bottom: 1px solid #e8ecf0; font-weight: 600; font-size: 14px; color: #1a2a3a; flex-shrink: 0; }
-        .panel-help .help-content { flex: 1; overflow-y: auto; padding: 12px 16px; font-size: 13px; color: #4a5a6a; line-height: 1.6; }
-        .panel-help .help-content .hint {
-            background: #fff8e1;
-            padding: 16px;
-            border-radius: 6px;
-            border-left: 4px solid #f5a623;
-            font-size: 14px;
-            font-weight: 500;
-            color: #5a4a1a;
-            box-shadow: 0 0 20px rgba(245, 166, 35, 0.15);
-            animation: hintGlow 2s ease-in-out infinite alternate;
-            min-height: 60px;
-        }
-        @keyframes hintGlow {
-            0% { box-shadow: 0 0 10px rgba(245, 166, 35, 0.1); border-left-color: #f5a623; }
-            100% { box-shadow: 0 0 25px rgba(245, 166, 35, 0.3); border-left-color: #e8960a; }
-        }
-        .panel-help .help-content .brief-text {
-            background: #f0f6ff;
-            padding: 12px 16px;
-            border-radius: 6px;
-            border-left: 4px solid #0066cc;
-            margin-bottom: 12px;
+        .panel-workspace .workspace-content .blue-team-section .blue-brief {
+            color: #1e293b;
+            margin-bottom: 10px;
             font-size: 13px;
             line-height: 1.6;
-            color: #1a2a3a;
-            max-height: 200px;
-            overflow-y: auto;
         }
-        
-        .mission-footer { display: flex; gap: 12px; padding: 10px 0 0 0; flex-shrink: 0; }
-        .hidden { display: none !important; }
-        
-        /* Report Template Styles */
+        .panel-workspace .workspace-content .blue-team-section textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e8e0d8;
+            border-radius: 6px;
+            background: #ffffff;
+            color: #1e293b;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            min-height: 60px;
+            resize: vertical;
+        }
+        .panel-workspace .workspace-content .blue-team-section textarea:focus {
+            outline: none;
+            border-color: #0d9488;
+            box-shadow: 0 0 0 3px rgba(13,148,136,0.1);
+        }
+        .panel-workspace .workspace-content .blue-team-section .submit-rule-btn { margin-top: 8px; }
+        .panel-workspace .workspace-content .blue-team-section .rule-result { margin-top: 8px; font-weight: 600; }
         .report-container {
             flex: 1;
             overflow-y: auto;
-            padding: 16px;
-            background: #ffffff;
-            border-radius: 8px;
-            border: 1px solid #e0e6ec;
+            padding: 20px;
+            background: #faf8f6;
+            border-radius: 6px;
+            border: 1px solid #e8e0d8;
             height: 100%;
         }
         .report-container h3 {
-            color: #1a2a3a;
+            color: #1e293b;
             margin-bottom: 16px;
-            border-bottom: 2px solid #0066cc;
+            border-bottom: 2px solid #0d9488;
             padding-bottom: 10px;
+            font-weight: 500;
         }
         .report-container .field-group {
             margin-bottom: 16px;
@@ -352,21 +615,24 @@
             font-weight: 600;
             display: block;
             margin-bottom: 4px;
-            color: #1a2a3a;
+            color: #475569;
+            font-size: 13px;
         }
         .report-container .field-group textarea {
             width: 100%;
             padding: 10px;
-            border: 1px solid #d0d8e0;
+            border: 1px solid #e8e0d8;
             border-radius: 6px;
+            background: #ffffff;
+            color: #1e293b;
             font-family: inherit;
             font-size: 13px;
             resize: vertical;
         }
         .report-container .field-group textarea:focus {
             outline: none;
-            border-color: #0066cc;
-            box-shadow: 0 0 0 3px rgba(0,102,204,0.1);
+            border-color: #0d9488;
+            box-shadow: 0 0 0 3px rgba(13,148,136,0.1);
         }
         .report-container .field-group textarea.monospace {
             font-family: 'Consolas', monospace;
@@ -377,10 +643,80 @@
             display: flex;
             gap: 12px;
         }
-        
-        @media (max-width: 992px) {
-            .panel-task { width: 160px; min-width: 120px; }
-            .panel-help { width: 200px; min-width: 140px; }
+        .panel-help {
+            width: 250px;
+            min-width: 180px;
+            background: #ffffff;
+            border-radius: 10px;
+            border: 1px solid #e8e0d8;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .panel-help .panel-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e8e0d8;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #64748b;
+            flex-shrink: 0;
+        }
+        .panel-help .help-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px;
+            font-size: 13px;
+            color: #64748b;
+            line-height: 1.6;
+        }
+        .panel-help .help-content .hint {
+            background: #fffbeb;
+            padding: 14px;
+            border-radius: 8px;
+            border-left: 4px solid #f59e0b;
+            font-size: 13px;
+            font-weight: 500;
+            color: #92400e;
+            min-height: 50px;
+        }
+        .panel-help .help-content .hint .hint-icon {
+            display: inline-block;
+            margin-right: 6px;
+            font-size: 14px;
+        }
+        .panel-help .help-content .brief-text {
+            background: #f0fdfa;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border-left: 4px solid #0d9488;
+            margin-bottom: 12px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #1e293b;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .panel-help .help-content .empty-state {
+            color: #cbd5e1;
+            font-size: 13px;
+            text-align: center;
+            padding: 20px 0;
+        }
+        .mission-footer {
+            display: flex;
+            gap: 12px;
+            padding: 8px 0 0 0;
+            flex-shrink: 0;
+        }
+        .hidden { display: none !important; }
+        .text-muted { color: #94a3b8; }
+        @media (max-width: 1024px) {
+            .panel-task { width: 170px; min-width: 130px; }
+            .panel-help { width: 200px; min-width: 150px; }
         }
         @media (max-width: 768px) {
             .mission-layout { flex-direction: column; }
@@ -391,26 +727,34 @@
             body { overflow-y: auto; }
             .header { flex-wrap: wrap; gap: 8px; }
             .modal-box { padding: 24px; }
-            .report-container { padding: 12px; }
         }
     </style>
 </head>
 <body>
     <div class="app-container">
+        <!-- HEADER -->
         <header class="header">
-            <div class="header-logo"><h1>Cyber <span>Range</span></h1></div>
+            <div class="header-logo">
+                <div class="logo-icon">CR</div>
+                <h1>Cyber <span>Range</span></h1>
+            </div>
+            <div class="header-status">
+                <span class="dot" id="status-dot"></span>
+                <span id="status-text">Ready</span>
+            </div>
             <div class="header-actions">
-                <span class="status"><span class="dot" id="status-dot"></span><span id="status-text">Ready</span></span>
                 <button class="btn btn-warning" id="import-btn" onclick="runImport()">Import Scanner</button>
                 <button class="btn btn-secondary" onclick="refreshMissions()">Refresh</button>
             </div>
         </header>
 
+        <!-- TAB BAR -->
         <div class="tab-bar" id="tab-bar">
             <button class="tab active" id="tab-active" onclick="switchTab('active')">Active</button>
             <button class="tab" id="tab-archived" onclick="switchTab('archived')">Archived</button>
         </div>
 
+        <!-- DASHBOARD -->
         <div class="view-dashboard" id="view-dashboard">
             <div class="stats">
                 <span class="stat-item">Total: <strong id="total-count">0</strong></span>
@@ -420,6 +764,7 @@
             <div class="missions-grid" id="missions-grid"></div>
         </div>
 
+        <!-- MODAL -->
         <div class="modal-overlay" id="mission-modal">
             <div class="modal-box">
                 <h2 id="modal-title">Mission Brief</h2>
@@ -433,23 +778,26 @@
             </div>
         </div>
 
+        <!-- MISSION VIEW -->
         <div class="view-mission" id="view-mission">
             <div class="mission-header">
                 <div class="title">Mission: <span id="mission-title">Loading...</span></div>
                 <div class="progress-info">
                     <span id="mission-step">Step 1 of 4</span>
                     <span class="timer" id="mission-timer">00:00</span>
-                    <button class="btn btn-secondary" onclick="forceNextStep()" style="padding:4px 12px;font-size:12px;">Skip Step</button>
+                    <button class="btn btn-secondary" onclick="forceNextStep()" style="padding:4px 10px;font-size:11px;">Skip Step</button>
                 </div>
                 <button class="exit-btn" onclick="exitMission()">Exit</button>
             </div>
 
             <div class="mission-layout">
+                <!-- LEFT: TASK -->
                 <div class="panel-task">
                     <div class="panel-header">Tasks</div>
                     <div class="task-list" id="task-list"></div>
                 </div>
 
+                <!-- CENTER: WORKSPACE -->
                 <div class="panel-workspace">
                     <div class="workspace-tabs">
                         <button class="wtab active" id="wtab-terminal" onclick="switchWorkspace('terminal')">Terminal</button>
@@ -480,14 +828,13 @@
                     </div>
                 </div>
 
+                <!-- RIGHT: HELP -->
                 <div class="panel-help">
                     <div class="panel-header">Help</div>
                     <div class="help-content" id="help-content">
-                        <div style="font-weight:600;font-size:13px;color:#1a2a3a;margin-bottom:4px;">Mission Brief</div>
                         <div class="brief-text" id="help-brief">Start a mission to see the brief here.</div>
-                        
-                        <div style="font-weight:600;font-size:13px;color:#1a2a3a;margin-top:12px;margin-bottom:4px;">AI Hint</div>
                         <div class="hint" id="help-hint">
+                            <span class="hint-icon">◆</span>
                             AI hints will appear here when you're stuck or idle.
                         </div>
                     </div>
@@ -542,17 +889,17 @@
             term = new Terminal({
                 cursorBlink: true,
                 theme: {
-                    background: '#0d1520',
-                    foreground: '#b0b8c8',
-                    cursor: '#00d4ff',
-                    black: '#0d1520',
-                    red: '#c06060',
-                    green: '#5aaa7a',
-                    yellow: '#d4a04a',
-                    blue: '#4a8ab5',
-                    magenta: '#a06aaa',
-                    cyan: '#5aaaba',
-                    white: '#c0d0e0'
+                    background: '#1e293b',
+                    foreground: '#e2e8f0',
+                    cursor: '#0d9488',
+                    black: '#1e293b',
+                    red: '#ef4444',
+                    green: '#10b981',
+                    yellow: '#f59e0b',
+                    blue: '#3b82f6',
+                    magenta: '#0d9488',
+                    cyan: '#0d9488',
+                    white: '#f8fafc'
                 },
                 convertEol: true
             });
@@ -560,7 +907,7 @@
             term.loadAddon(fitAddon);
             term.open(wrapper);
             fitAddon.fit();
-            term.write('\x1b[1;32m$ \x1b[0m');
+            term.write('\x1b[1;36m$ \x1b[0m');
             term.onData((data) => {
                 lastCommandTime = Date.now();
                 hintTriggered = false;
@@ -590,19 +937,19 @@
         function fetchAIHint(trigger, details) {
             const actions = lastCommands.slice(-5).join(', ');
             const cveDesc = currentMissionData?.description || '';
-            document.getElementById('help-hint').innerHTML = 'Thinking...';
+            document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Thinking...';
             const url = `${API_BASE}/ai/hint?task_name=Step ${currentStep+1}&current_step=Step ${currentStep+1}&actions=${encodeURIComponent(actions)}&cve_description=${encodeURIComponent(cveDesc)}`;
             fetch(url)
                 .then(res => res.json())
                 .then(data => {
                     const hint = data.hint || 'Try exploring the target with basic reconnaissance commands.';
                     let triggerText = '';
-                    if (trigger === 'idle') triggerText = 'You\'ve been idle for ' + Math.round(details) + ' seconds. ';
-                    else if (trigger === 'failure') triggerText = 'You\'ve tried this step multiple times. ';
-                    document.getElementById('help-hint').innerHTML = triggerText + hint;
+                    if (trigger === 'idle') triggerText = '⏳ You\'ve been idle for ' + Math.round(details) + ' seconds. ';
+                    else if (trigger === 'failure') triggerText = '✗ You\'ve tried this step multiple times. ';
+                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> ' + triggerText + hint;
                 })
                 .catch(err => {
-                    document.getElementById('help-hint').innerHTML = 'Could not fetch hint: ' + err.message;
+                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Could not fetch hint: ' + err.message;
                 });
         }
 
@@ -619,7 +966,7 @@
                     if (lastCommands.length > 10) lastCommands.shift();
                     processCommand(cmd);
                 } else {
-                    term.write('\x1b[1;32m$ \x1b[0m');
+                    term.write('\x1b[1;36m$ \x1b[0m');
                 }
                 return;
             }
@@ -685,7 +1032,7 @@
         function redrawInputLine() {
             term.write('\r');
             term.write('\x1b[2K');
-            term.write('\x1b[1;32m$ \x1b[0m');
+            term.write('\x1b[1;36m$ \x1b[0m');
             term.write(currentInput);
             if (cursorPosition < currentInput.length) {
                 term.write('\x1b[' + (currentInput.length - cursorPosition) + 'D');
@@ -695,30 +1042,24 @@
         function forceNextStep() {
             if (currentStep < 3) {
                 var nextStep = currentStep + 1;
-                
                 if (nextStep === 2) {
                     if (!flagCaptured) {
                         flagCaptured = true;
                         term.writeln('\x1b[1;32mFLAG CAPTURED! (Simulated for skip)\x1b[0m');
                     }
-                    
-                    term.writeln('\x1b[1;32mStarting Blue Team phase...\x1b[0m');
-                    
+                    term.writeln('\x1b[1;36mStarting Blue Team phase...\x1b[0m');
                     var blueSection = document.getElementById('blue-team-section');
                     blueSection.classList.add('active');
-                    
                     var blueBriefText = currentMissionData.blue_team_brief || 'Your mission is to investigate the logs from the attack in Splunk. You must locate the attack traces and write a detection rule to prevent future exploitation.';
                     document.getElementById('blue-brief-text').textContent = blueBriefText;
                     document.getElementById('help-brief').textContent = 'Blue Team Phase: ' + blueBriefText;
                     document.getElementById('wtab-splunk').classList.remove('disabled');
                     document.getElementById('submit-report-btn').disabled = false;
-                    
                     currentStep = nextStep;
                     updateTasks(currentStep);
                     switchWorkspace('splunk');
-                    term.writeln('\x1b[1;32mBlue Team phase started. Investigate the logs in Splunk.\x1b[0m');
-                }
-                else {
+                    term.writeln('\x1b[1;36mBlue Team phase started. Investigate the logs in Splunk.\x1b[0m');
+                } else {
                     currentStep = nextStep;
                     updateTasks(currentStep);
                     term.writeln('\x1b[1;33mAdvanced to Step ' + (currentStep+1) + '\x1b[0m');
@@ -730,28 +1071,24 @@
 
         function processCommand(cmd) {
             if (!cmd) {
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 return;
             }
-            
             const lowerCmd = cmd.toLowerCase();
-            
             if (cmd === 'next') {
                 forceNextStep();
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 return;
             }
-            
             if (lowerCmd.includes('cat') && lowerCmd.includes('brief')) {
                 if (currentMissionData?.red_team_brief) {
                     term.writeln('\x1b[2;37m' + currentMissionData.red_team_brief + '\x1b[0m');
                 } else {
                     term.writeln('\x1b[2;37mNo brief available.\x1b[0m');
                 }
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 return;
             }
-            
             if (lowerCmd.includes('nmap')) {
                 term.writeln('\x1b[2;37mStarting Nmap 7.94\x1b[0m');
                 term.writeln('\x1b[2;37mPORT   STATE SERVICE\x1b[0m');
@@ -762,18 +1099,16 @@
                     updateTasks(currentStep);
                     failedAttempts = 0;
                 }
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 return;
             }
-            
             if (lowerCmd.includes('curl') && (lowerCmd.includes('or') || lowerCmd.includes('%20or'))) {
                 term.writeln('\x1b[1;32mFLAG-FOUND: You retrieved 2 users! Data: [(1, \'admin\', \'secretpass\'), (2, \'john\', \'doe123\')]\x1b[0m');
                 captureFlag();
                 failedAttempts = 0;
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 return;
             }
-            
             if (lowerCmd.includes('index=')) {
                 term.writeln('\x1b[2;37mFound 1 event\x1b[0m');
                 term.writeln('\x1b[2;37m2026-07-29 14:32:22 FLAG-FOUND: admin\x1b[0m');
@@ -783,29 +1118,26 @@
                     updateTasks(currentStep);
                     document.getElementById('submit-report-btn').disabled = false;
                 }
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 return;
             }
-            
             if (cmd === 'help') {
                 term.writeln('\x1b[2;37mCommands: nmap, curl, cat, index=main, help, clear, next\x1b[0m');
                 term.writeln('\x1b[2;37mOr click the "Skip Step" button in the header.\x1b[0m');
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 return;
             }
-            
             if (cmd === 'clear') {
                 term.clear();
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 return;
             }
-            
             failedAttempts++;
             term.writeln('\x1b[2;37mCommand not recognized. Try: nmap, curl, cat, index=main, help, clear, next\x1b[0m');
             if (failedAttempts >= 2) {
                 fetchAIHint('failure', failedAttempts);
             }
-            term.write('\x1b[1;32m$ \x1b[0m');
+            term.write('\x1b[1;36m$ \x1b[0m');
         }
 
         function sendCommand(cmd) {
@@ -813,7 +1145,7 @@
             term.write('\r\x1b[2K');
             currentInput = cmd;
             cursorPosition = cmd.length;
-            term.write('\x1b[1;32m$ \x1b[0m' + cmd);
+            term.write('\x1b[1;36m$ \x1b[0m' + cmd);
             setTimeout(() => {
                 term.write('\r\n');
                 const commandToRun = currentInput.trim();
@@ -826,7 +1158,7 @@
                     if (lastCommands.length > 10) lastCommands.shift();
                     processCommand(commandToRun);
                 } else {
-                    term.write('\x1b[1;32m$ \x1b[0m');
+                    term.write('\x1b[1;36m$ \x1b[0m');
                 }
             }, 100);
         }
@@ -864,12 +1196,10 @@
         function renderMissions() {
             const grid = document.getElementById('missions-grid');
             const list = currentTab === 'active' ? activeMissions : archivedMissions;
-            
             if (list.length === 0) {
                 grid.innerHTML = '<div class="empty-state"><div class="icon">[ ]</div><div>No ' + currentTab + ' missions</div></div>';
                 return;
             }
-            
             grid.innerHTML = '';
             list.forEach(vuln => {
                 const card = document.createElement('div');
@@ -908,7 +1238,6 @@
             document.getElementById('modal-red-brief').textContent = 'Loading mission brief...';
             document.getElementById('modal-enter-btn').disabled = true;
             document.getElementById('modal-enter-btn').textContent = 'Loading...';
-
             fetch(API_BASE + '/missions/' + id + '/start', { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
@@ -923,7 +1252,6 @@
                     document.getElementById('modal-subtitle').textContent = 'Review your Red Team objectives.';
                     document.getElementById('modal-enter-btn').disabled = false;
                     document.getElementById('modal-enter-btn').textContent = 'Enter Mission';
-                    
                     document.getElementById('help-brief').textContent = data.red_team_brief || 'No brief available.';
                 })
                 .catch(err => {
@@ -940,16 +1268,12 @@
             closeModal();
             isMissionActive = true;
             startIdleCheck();
-            
             document.getElementById('view-dashboard').style.display = 'none';
             document.getElementById('view-mission').classList.add('active');
             document.getElementById('tab-bar').style.display = 'none';
-            
             document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
-            
             currentStep = 0;
             updateTasks(currentStep);
-            
             seconds = 0;
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(function() {
@@ -958,40 +1282,31 @@
                 var secs = String(seconds % 60).padStart(2, '0');
                 document.getElementById('mission-timer').textContent = mins + ':' + secs;
             }, 1000);
-
             flagCaptured = false;
             document.getElementById('submit-report-btn').disabled = true;
             document.getElementById('blue-team-section').classList.remove('active');
             document.getElementById('rule-result').textContent = '';
             document.getElementById('rule-input').value = '';
             document.getElementById('wtab-splunk').classList.add('disabled');
-
             lastCommandTime = Date.now();
             failedAttempts = 0;
             lastCommands = [];
             hintTriggered = false;
-
-            document.getElementById('help-hint').innerHTML = 'AI hints will appear here when you\'re stuck or idle.';
-
+            document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> AI hints will appear here when you\'re stuck or idle.';
             if (term) {
                 term.clear();
-                term.write('\x1b[1;32m$ \x1b[0m');
+                term.write('\x1b[1;36m$ \x1b[0m');
                 currentInput = '';
                 cursorPosition = 0;
                 commandHistory = [];
                 historyIndex = 0;
             }
-
             if (currentMissionData.app_url) {
                 document.getElementById('app-iframe').src = currentMissionData.app_url;
             }
-
             switchWorkspace('terminal');
         }
 
-        // ============================================================
-        // UPDATE TASKS - FIXED TO SHOW REPORT TEMPLATE AT STEP 3
-        // ============================================================
         function updateTasks(step) {
             var tasks = [
                 'Reconnaissance',
@@ -1011,24 +1326,16 @@
                 list.appendChild(div);
             });
             document.getElementById('mission-step').textContent = 'Step ' + (step+1) + ' of ' + tasks.length;
-            
-            // If we're at Step 3 (Submit Final Report), clear right panel and show report
             if (step === 3) {
-                // Hide Blue Team section
                 var blueSection = document.getElementById('blue-team-section');
                 blueSection.classList.remove('active');
                 document.getElementById('blue-brief-text').textContent = '';
                 document.getElementById('rule-input').value = '';
                 document.getElementById('rule-result').textContent = '';
-                
-                // CLEAR the right panel (Help section)
                 var helpBrief = document.getElementById('help-brief');
                 var helpHint = document.getElementById('help-hint');
-                
                 helpBrief.textContent = '';
                 helpHint.innerHTML = '';
-                
-                // Show report template
                 showReportTemplate();
             }
         }
@@ -1037,15 +1344,12 @@
             currentWorkspace = tab;
             document.querySelectorAll('.workspace-tabs .wtab').forEach(function(el) { el.classList.remove('active'); });
             document.getElementById('wtab-' + tab).classList.add('active');
-
             var terminal = document.getElementById('terminal-container');
             var target = document.getElementById('target-container');
             var splunk = document.getElementById('splunk-container');
-
             terminal.classList.add('hidden');
             target.classList.add('hidden');
             splunk.classList.add('hidden');
-
             if (tab === 'terminal') {
                 terminal.classList.remove('hidden');
                 setTimeout(function() { if (fitAddon) fitAddon.fit(); }, 100);
@@ -1060,153 +1364,111 @@
         function captureFlag() {
             if (flagCaptured) return;
             flagCaptured = true;
-            
             term.writeln('\x1b[1;32mFLAG CAPTURED! Red Team phase complete.\x1b[0m');
             term.writeln('\x1b[1;33mBlue Team phase is now available. Click "Skip Step" or type "next" to begin.\x1b[0m');
-            
             document.getElementById('submit-report-btn').disabled = false;
             document.getElementById('wtab-splunk').classList.remove('disabled');
-            
             var blueSection = document.getElementById('blue-team-section');
             blueSection.classList.add('active');
             var blueBriefText = currentMissionData.blue_team_brief || 'Your mission is to investigate the logs from the attack in Splunk. You must locate the attack traces and write a detection rule to prevent future exploitation.';
             document.getElementById('blue-brief-text').textContent = blueBriefText;
-            
             currentStep = 2;
             updateTasks(currentStep);
-            
             document.getElementById('help-hint').innerHTML = 'Red Team complete. Begin Blue Team investigation when ready.';
         }
 
-        // ============================================================
-        // SUBMIT RULE - Moves to Report Template
-        // ============================================================
         function submitRule() {
             var input = document.getElementById('rule-input');
             var result = document.getElementById('rule-result');
             var rule = input.value.trim();
             if (!rule) {
                 result.textContent = 'Please write a detection rule.';
-                result.style.color = '#c05050';
+                result.style.color = '#ef4444';
                 return;
             }
             if (rule.toLowerCase().includes('sql') || rule.toLowerCase().includes('or 1=1') || rule.toLowerCase().includes('alert')) {
-                result.textContent = 'Rule validated. The attack is blocked. Proceed to submit your report.';
-                result.style.color = '#1a8a4a';
-                
-                // Step 3: Submit Final Report
+                result.textContent = '✓ Rule validated. The attack is blocked. Proceed to submit your report.';
+                result.style.color = '#10b981';
                 currentStep = 3;
                 updateTasks(currentStep);
-                
-                // HIDE Blue Team section completely
                 var blueSection = document.getElementById('blue-team-section');
                 blueSection.classList.remove('active');
                 document.getElementById('blue-brief-text').textContent = '';
                 document.getElementById('rule-input').value = '';
                 document.getElementById('rule-result').textContent = '';
-                
-                // SHOW Report Template (already handled by updateTasks, but just in case)
                 showReportTemplate();
-                
                 document.getElementById('submit-report-btn').disabled = false;
             } else {
-                result.textContent = 'Rule did not block the attack. Try writing a rule that detects SQL injection patterns like "OR 1=1".';
-                result.style.color = '#c05050';
+                result.textContent = '✗ Rule did not block the attack. Try writing a rule that detects SQL injection patterns like "OR 1=1".';
+                result.style.color = '#f59e0b';
             }
         }
 
-        // ============================================================
-        // SHOW REPORT TEMPLATE
-        // ============================================================
         function showReportTemplate() {
             var workspace = document.getElementById('workspace-content');
-            
-            // Hide all existing content
             var terminalContainer = document.getElementById('terminal-container');
             var targetContainer = document.getElementById('target-container');
             var splunkContainer = document.getElementById('splunk-container');
             var blueSection = document.getElementById('blue-team-section');
-            
             terminalContainer.classList.add('hidden');
             targetContainer.classList.add('hidden');
             splunkContainer.classList.add('hidden');
             blueSection.classList.remove('active');
-            
-            // Remove existing report if any
             var existingReport = document.getElementById('report-template');
             if (existingReport) {
                 existingReport.remove();
             }
-            
-            // Create the report container
             var reportContainer = document.createElement('div');
             reportContainer.id = 'report-template';
             reportContainer.className = 'report-container';
             reportContainer.innerHTML = `
                 <h3>Final Incident Report</h3>
-                
                 <div class="field-group">
-                    <label>Vulnerability: <span style="font-weight: normal;">${currentMissionData?.cve_id || 'N/A'}</span></label>
+                    <label>Vulnerability: <span style="font-weight: normal;color:#64748b;">${currentMissionData?.cve_id || 'N/A'}</span></label>
                 </div>
-                
                 <div class="field-group">
                     <label>1. Attack Description</label>
                     <textarea id="report-attack-desc" rows="3" placeholder="Describe how the attack was executed and what vulnerability was exploited."></textarea>
                 </div>
-                
                 <div class="field-group">
                     <label>2. Detection Method</label>
                     <textarea id="report-detection" rows="3" placeholder="Describe how the attack was detected (logs, alerts, etc.)."></textarea>
                 </div>
-                
                 <div class="field-group">
                     <label>3. Detection Rule</label>
                     <textarea id="report-rule" rows="3" class="monospace" placeholder="Write the detection rule you created."></textarea>
                 </div>
-                
                 <div class="field-group">
                     <label>4. Recommendations</label>
                     <textarea id="report-recommendations" rows="3" placeholder="Recommend actions to prevent future exploitation (patching, configuration changes, etc.)."></textarea>
                 </div>
-                
                 <div class="actions">
                     <button class="btn btn-success" onclick="submitFinalReport()">Submit Report</button>
                     <button class="btn btn-secondary" onclick="resetReportTemplate()">Clear All</button>
                 </div>
             `;
-            
             workspace.appendChild(reportContainer);
-            
-            // Auto-scroll to the report
             setTimeout(function() {
                 reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 100);
         }
 
-        // ============================================================
-        // RESET REPORT TEMPLATE
-        // ============================================================
         function resetReportTemplate() {
             var attackDesc = document.getElementById('report-attack-desc');
             var detection = document.getElementById('report-detection');
             var rule = document.getElementById('report-rule');
             var recommendations = document.getElementById('report-recommendations');
-            
             if (attackDesc) attackDesc.value = '';
             if (detection) detection.value = '';
             if (rule) rule.value = '';
             if (recommendations) recommendations.value = '';
         }
 
-        // ============================================================
-        // SUBMIT FINAL REPORT
-        // ============================================================
         function submitFinalReport() {
             var attackDesc = document.getElementById('report-attack-desc')?.value || 'Not provided';
             var detection = document.getElementById('report-detection')?.value || 'Not provided';
             var rule = document.getElementById('report-rule')?.value || 'Not provided';
             var recommendations = document.getElementById('report-recommendations')?.value || 'Not provided';
-            
             var reportData = {
                 cve_id: currentMissionData?.cve_id || 'N/A',
                 attack_description: attackDesc,
@@ -1214,9 +1476,7 @@
                 detection_rule: rule,
                 recommendations: recommendations
             };
-            
             console.log('Report submitted:', reportData);
-            
             fetch(API_BASE + '/ai/grade', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1238,21 +1498,16 @@
             });
         }
 
-        // ============================================================
-        // SUBMIT REPORT
-        // ============================================================
         function submitReport() {
             if (!flagCaptured) {
                 alert('You must capture the flag before submitting the report.');
                 return;
             }
-            // If already at report template, submit it
             var reportTemplate = document.getElementById('report-template');
             if (reportTemplate) {
                 submitFinalReport();
                 return;
             }
-            // Show the report template
             showReportTemplate();
         }
 
@@ -1260,7 +1515,6 @@
             isMissionActive = false;
             if (idleCheckInterval) clearInterval(idleCheckInterval);
             if (timerInterval) clearInterval(timerInterval);
-            
             document.getElementById('view-mission').classList.remove('active');
             document.getElementById('view-dashboard').style.display = 'flex';
             document.getElementById('tab-bar').style.display = 'flex';
@@ -1269,47 +1523,87 @@
             document.getElementById('rule-input').value = '';
             document.getElementById('submit-report-btn').disabled = true;
             document.getElementById('wtab-splunk').classList.add('disabled');
-            
-            // Remove report template if exists
             var reportTemplate = document.getElementById('report-template');
             if (reportTemplate) {
                 reportTemplate.remove();
             }
-            
-            document.getElementById('help-hint').innerHTML = 'AI hints will appear here when you\'re stuck or idle.';
+            document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> AI hints will appear here when you\'re stuck or idle.';
             document.getElementById('help-brief').textContent = 'Start a mission to see the brief here.';
-            
             currentMissionData = null;
             renderMissions();
         }
 
+        // ============================================================
+        // RUN IMPORT - IMPROVED WITH DETAILED ERROR MESSAGES
+        // ============================================================
         function runImport() {
             var btn = document.getElementById('import-btn');
             var dot = document.getElementById('status-dot');
             var text = document.getElementById('status-text');
+            var errorDiv = document.getElementById('error');
+            
             btn.disabled = true;
             btn.textContent = 'Importing...';
             dot.className = 'dot warning';
-            text.textContent = 'Importing...';
+            text.textContent = 'Importing... (this may take several minutes)';
+            
+            errorDiv.style.display = 'block';
+            errorDiv.style.background = '#fef8f0';
+            errorDiv.style.color = '#92400e';
+            errorDiv.textContent = '⏳ Importing vulnerabilities from scanner database... Please wait. This may take 5-10 minutes.';
+            
+            var timeoutId = setTimeout(function() {
+                btn.disabled = false;
+                btn.textContent = 'Import Scanner';
+                dot.className = 'dot error';
+                text.textContent = 'Timeout';
+                errorDiv.style.background = '#fef2f2';
+                errorDiv.style.color = '#991b1b';
+                errorDiv.textContent = '❌ Import timed out after 10 minutes. The scanner database may have too many records. Try running it manually from the terminal.';
+                errorDiv.style.display = 'block';
+            }, 600000);
+            
             fetch(API_BASE + '/admin/import', { method: 'POST' })
-                .then(function(res) { return res.json(); })
+                .then(function(res) { 
+                    clearTimeout(timeoutId);
+                    return res.json(); 
+                })
                 .then(function(data) {
+                    console.log('Import response:', data);
                     btn.disabled = false;
                     btn.textContent = 'Import Scanner';
+                    
                     if (data.status === 'success') {
                         dot.className = 'dot';
                         text.textContent = 'Import complete';
+                        errorDiv.style.display = 'none';
                         loadMissions();
                     } else {
                         dot.className = 'dot error';
                         text.textContent = 'Failed';
+                        // Show detailed error if available
+                        var errorMsg = data.message || data.error || data.output || 'Unknown error';
+                        if (data.error) {
+                            errorMsg = data.error;
+                        } else if (data.output) {
+                            errorMsg = data.output;
+                        }
+                        errorDiv.style.background = '#fef2f2';
+                        errorDiv.style.color = '#991b1b';
+                        errorDiv.textContent = '❌ Import failed: ' + errorMsg;
+                        errorDiv.style.display = 'block';
                     }
                 })
                 .catch(function(err) {
+                    clearTimeout(timeoutId);
                     btn.disabled = false;
                     btn.textContent = 'Import Scanner';
                     dot.className = 'dot error';
                     text.textContent = 'Error';
+                    errorDiv.style.background = '#fef2f2';
+                    errorDiv.style.color = '#991b1b';
+                    errorDiv.textContent = '❌ Failed to run import: ' + err.message;
+                    errorDiv.style.display = 'block';
                 });
         }
     </script>

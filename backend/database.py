@@ -4,6 +4,7 @@ import psycopg2.extras
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -282,10 +283,46 @@ def get_top_interesting_vulnerabilities(limit: int = 10):
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute("""
         SELECT * FROM platform_vulnerabilities 
-        WHERE platform_status = 'pending'
+        WHERE platform_status = 'pending' 
         ORDER BY interestingness_score DESC
         LIMIT %s
     """, (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def archive_old_vulnerabilities(days_threshold: int = 1):
+    """
+    Archive vulnerabilities that haven't been seen in X days.
+    """
+    conn = get_platform_connection()
+    cursor = conn.cursor()
+    
+    cutoff_date = (datetime.now() - timedelta(days=days_threshold)).isoformat()
+    
+    cursor.execute("""
+        UPDATE platform_vulnerabilities 
+        SET platform_status = 'archived' 
+        WHERE platform_status = 'active' 
+        AND last_seen < %s
+    """, (cutoff_date,))
+    
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    
+    print(f"[OK] Archived {affected} vulnerabilities (not seen in {days_threshold}+ days)")
+    return affected
+
+def get_active_vulnerabilities():
+    """Get vulnerabilities that are currently active."""
+    conn = get_platform_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("""
+        SELECT * FROM platform_vulnerabilities 
+        WHERE platform_status = 'active'
+        ORDER BY cvss_score DESC
+    """)
     rows = cursor.fetchall()
     conn.close()
     return rows
