@@ -1166,33 +1166,30 @@
         function loadMissions() {
             const grid = document.getElementById('missions-grid');
             grid.innerHTML = '<div class="empty-state"><div class="icon">[ ]</div><div>Loading...</div></div>';
-            fetch(API_BASE + '/vulnerabilities/top?limit=20')
-                .then(res => res.json())
-                .then(data => {
-                    if (data.error) {
-                        grid.innerHTML = '<div class="empty-state"><div class="icon">[!]</div><div>Error: ' + data.error + '</div></div>';
-                        return;
-                    }
-                    if (!data.vulnerabilities || data.vulnerabilities.length === 0) {
-                        grid.innerHTML = '<div class="empty-state"><div class="icon">[ ]</div><div>No missions</div><div class="sub">Click "Import Scanner"</div></div>';
-                        document.getElementById('total-count').textContent = '0';
-                        document.getElementById('active-count').textContent = '0';
-                        document.getElementById('archived-count').textContent = '0';
-                        return;
-                    }
-                    missions = data.vulnerabilities;
-                    archivedMissions = missions.slice(0, Math.min(2, missions.length));
-                    activeMissions = missions.slice(Math.min(2, missions.length));
-                    document.getElementById('total-count').textContent = missions.length;
-                    document.getElementById('active-count').textContent = activeMissions.length;
-                    document.getElementById('archived-count').textContent = archivedMissions.length;
-                    renderMissions();
-                })
-                .catch(err => {
-                    grid.innerHTML = '<div class="empty-state"><div class="icon">[!]</div><div>' + err.message + '</div></div>';
-                });
-        }
 
+            Promise.all([
+                fetch(API_BASE + '/vulnerabilities/top').then(r => r.json()),
+                fetch(API_BASE + '/vulnerabilities/archived').then(r => r.json())
+            ])
+            .then(([topData, archivedData]) => {
+                if (topData.error || archivedData.error) {
+                    grid.innerHTML = '<div class="empty-state"><div class="icon">[!]</div><div>Error: ' +
+                        (topData.error || archivedData.error) + '</div></div>';
+                    return;
+                }
+                activeMissions = topData.vulnerabilities || [];
+                archivedMissions = archivedData.vulnerabilities || [];
+                missions = activeMissions.concat(archivedMissions);
+
+                document.getElementById('total-count').textContent = missions.length;
+                document.getElementById('active-count').textContent = activeMissions.length;
+                document.getElementById('archived-count').textContent = archivedMissions.length;
+                renderMissions();
+            })
+            .catch(err => {
+                grid.innerHTML = '<div class="empty-state"><div class="icon">[!]</div><div>' + err.message + '</div></div>';
+            });
+        }
         function renderMissions() {
             const grid = document.getElementById('missions-grid');
             const list = currentTab === 'active' ? activeMissions : archivedMissions;

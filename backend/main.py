@@ -9,6 +9,8 @@ import psycopg2.extras
 from dotenv import load_dotenv
 import socket
 import time
+from database import get_archived_vulnerabilities
+
 
 # Load environment variables
 load_dotenv()
@@ -183,7 +185,7 @@ def list_pending_vulnerabilities():
         return {"error": str(e)}
 
 @app.get("/vulnerabilities/top")
-def get_top_vulnerabilities(limit: int = 10):
+def get_top_vulnerabilities(limit: int = 100):
     try:
         top = get_top_interesting_vulnerabilities(limit)
         return {"vulnerabilities": [dict(v) for v in top]}
@@ -302,3 +304,13 @@ def run_scanner_import():
     except Exception as e:
         print(f"❌ Import exception: {str(e)}")
         return {"status": "error", "message": str(e)}
+
+
+
+@app.get("/vulnerabilities/archived")
+def list_archived_vulnerabilities(min_score: int = 5):
+    try:
+        archived = get_archived_vulnerabilities(min_score)
+        return {"vulnerabilities": [dict(v) for v in archived]}
+    except Exception as e:
+        return {"error": str(e)}

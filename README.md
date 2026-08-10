@@ -3,6 +3,23 @@
 ## Project Goal
 Convert daily vulnerability scanner findings into interactive attack-and-defense labs.
 
+## steps to make it run
+1) Run the docker in the backend:  
+```bash 
+docker build -t custom-vuln-app ./containers
+```
+
+2) Run this on the backend level directory: 
+``` bash
+ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+```
+3) Run frontend 
+```bash
+http://localhost:8000/
+
+```
+
 ## Phase 1 (Weeks 1-2)
 Building base Docker containers with vulnerable applications.
 

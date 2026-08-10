@@ -163,26 +163,41 @@ def fetch_vulnerabilities_from_scanner():
 # YOUR PLATFORM DATABASE FUNCTIONS (PostgreSQL)
 # ============================================================
 def save_to_platform(cve_id: str, description: str, cvss_score: float, asset: str, is_kev: bool, interestingness_score: int):
-    """Save an interesting vulnerability to YOUR PostgreSQL platform database."""
+    """Save/refresh a vulnerability in YOUR PostgreSQL platform database.
+
+    IMPORTANT: this is called for every CVE the scanner reports this run,
+    not just the ones scoring >=5. That's what keeps archive_old_vulnerabilities()
+    from wrongly archiving a CVE that's still live but happened to score
+    lower on this particular AI pass.
+    """
     conn = get_platform_connection()
     cursor = conn.cursor()
-    
     today = datetime.now()
-    
-    # Check if CVE already exists in your platform
-    cursor.execute("SELECT id FROM platform_vulnerabilities WHERE cve_id = %s", (cve_id,))
+
+    cursor.execute("SELECT id, platform_status FROM platform_vulnerabilities WHERE cve_id = %s", (cve_id,))
     existing = cursor.fetchone()
-    
+
     if existing:
-        # Update existing
+        existing_id, existing_status = existing
+        # It was seen again by the scanner -> it's no longer "not seen today".
+        # If it had been archived, bring it back to pending. Never touch an
+        # 'active' mission that's currently in progress.
+        new_status = 'pending' if existing_status == 'archived' else existing_status
+
         cursor.execute('''
-            UPDATE platform_vulnerabilities 
-            SET last_seen = %s, cvss_score = %s, is_kev = %s, interestingness_score = %s, description = %s, asset = %s
+            UPDATE platform_vulnerabilities
+            SET last_seen = %s, cvss_score = %s, is_kev = %s, interestingness_score = %s,
+                description = %s, asset = %s, platform_status = %s
             WHERE cve_id = %s
-        ''', (today, cvss_score, is_kev, interestingness_score, description, asset, cve_id))
-        print(f"[OK] Updated in platform: {cve_id}")
+        ''', (today, cvss_score, is_kev, interestingness_score, description, asset, new_status, cve_id))
+        print(f"[OK] Updated in platform: {cve_id} (last_seen refreshed, status={new_status})")
     else:
-        # Insert new
+        # Only brand-new CVEs are gated by the interestingness score —
+        # no point ever surfacing a boring one as a mission candidate.
+        if interestingness_score < 5:
+            print(f"[SKIP] {cve_id} is new but not interesting (score {interestingness_score}). Not added.")
+            conn.close()
+            return
         severity = get_severity_label(cvss_score)
         cursor.execute('''
             INSERT INTO platform_vulnerabilities 
@@ -190,7 +205,7 @@ def save_to_platform(cve_id: str, description: str, cvss_score: float, asset: st
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (cve_id, description, cvss_score, asset, severity, is_kev, interestingness_score, today, today, 'pending'))
         print(f"[OK] Added to platform: {cve_id}")
-    
+
     conn.commit()
     conn.close()
 
@@ -291,27 +306,31 @@ def get_top_interesting_vulnerabilities(limit: int = 10):
     conn.close()
     return rows
 
-def archive_old_vulnerabilities(days_threshold: int = 1):
+def archive_old_vulnerabilities():
     """
-    Archive vulnerabilities that haven't been seen in X days.
+    Archive ALL vulnerabilities that haven't been seen TODAY.
+    Only vulnerabilities with last_seen = TODAY remain active/pending.
     """
     conn = get_platform_connection()
     cursor = conn.cursor()
     
-    cutoff_date = (datetime.now() - timedelta(days=days_threshold)).isoformat()
+    # Get today's date (without time) for comparison
+    today = datetime.now().date()
     
+    # Archive everything where last_seen is NOT today
+    # This handles both 'pending' and 'active' statuses
     cursor.execute("""
         UPDATE platform_vulnerabilities 
         SET platform_status = 'archived' 
-        WHERE platform_status = 'active' 
-        AND last_seen < %s
-    """, (cutoff_date,))
+        WHERE platform_status IN ('pending', 'active')
+        AND DATE(last_seen) != %s
+    """, (today,))
     
     affected = cursor.rowcount
     conn.commit()
     conn.close()
     
-    print(f"[OK] Archived {affected} vulnerabilities (not seen in {days_threshold}+ days)")
+    print(f"[OK] Archived {affected} vulnerabilities (last_seen != today)")
     return affected
 
 def get_active_vulnerabilities():
@@ -323,6 +342,20 @@ def get_active_vulnerabilities():
         WHERE platform_status = 'active'
         ORDER BY cvss_score DESC
     """)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_archived_vulnerabilities(min_interestingness: int = 5):
+    """Archived vulnerabilities that are still worth showing (score > threshold)."""
+    conn = get_platform_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("""
+        SELECT * FROM platform_vulnerabilities
+        WHERE platform_status = 'archived'
+        AND interestingness_score > %s
+        ORDER BY last_seen DESC
+    """, (min_interestingness,))
     rows = cursor.fetchall()
     conn.close()
     return rows

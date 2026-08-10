@@ -12,64 +12,41 @@ from datetime import datetime, timedelta
 # ============================================================
 # IMPORT AND PROCESS VULNERABILITIES
 # ============================================================
+
 def import_vulnerabilities():
     """Import vulnerabilities from scanner, score with AI, save to platform."""
-    
     print("[INFO] Reading vulnerabilities from scanner database (READ ONLY)...")
-    
     vulnerabilities = fetch_vulnerabilities_from_scanner()
-    
+
     if not vulnerabilities:
         print("[INFO] No new vulnerabilities found.")
         return
-    
-    print(f"[INFO] Found {len(vulnerabilities)} new vulnerabilities.")
-    
+
+    print(f"[INFO] Found {len(vulnerabilities)} vulnerabilities in the scan window.")
+
     for vuln in vulnerabilities:
         cve_id = vuln["cve_id"]
         description = vuln["description"]
         cvss_score = vuln["cvss_score"]
         asset = vuln["asset"]
         is_kev = vuln["is_kev"]
-        
+
         print(f"\n{'='*50}")
         print(f"Processing: {cve_id}")
         print(f"CVSS Score: {cvss_score}")
         print(f"Asset: {asset}")
         print(f"KEV: {'Yes' if is_kev else 'No'}")
-        
+
         print("[AI] Scoring...")
         interestingness = score_cve_interestingness(cve_id, description, cvss_score, is_kev)
         print(f"   Interestingness Score: {interestingness}/10")
-        
-        if interestingness >= 5:
-            print(f"[OK] {cve_id} is interesting (score {interestingness}). Saving...")
-            save_to_platform(cve_id, description, cvss_score, asset, is_kev, interestingness)
-        else:
-            print(f"[SKIP] {cve_id} is not interesting (score {interestingness}). Skipping.")
-    
+
+        # Always save — refreshing last_seen for anything the scanner still
+        # reports, regardless of today's score. save_to_platform only gates
+        # NEW CVEs by score; existing ones always get their last_seen touched.
+        save_to_platform(cve_id, description, cvss_score, asset, is_kev, interestingness)
+
     print("\n[OK] Import complete.")
-
-# ============================================================
-# RUN ARCHIVE (RENAMED TO AVOID RECURSION)
-# ============================================================
-def run_archive():
-    """
-    Archive vulnerabilities that haven't been seen today.
-    This runs automatically during the import process.
-    """
-    print("\n[INFO] Checking for vulnerabilities to archive...")
-    
-    # Archive vulnerabilities not seen today (1 day threshold)
-    archived_count = archive_old_vulnerabilities(days_threshold=1)
-    
-    if archived_count > 0:
-        print(f"[OK] Archived {archived_count} vulnerabilities (not seen today)")
-    else:
-        print("[INFO] No vulnerabilities to archive")
-    
-    return archived_count
-
 # ============================================================
 # RUN FULL PIPELINE
 # ============================================================
@@ -85,8 +62,10 @@ def run_full_pipeline():
     # Step 2: Import and score vulnerabilities
     import_vulnerabilities()
     
-    # Step 3: Archive old vulnerabilities (RENAMED FUNCTION)
-    run_archive()
+    # Step 3: Archive OLD vulnerabilities (last_seen != today)
+    # THIS MUST RUN AFTER IMPORT so that newly imported ones have today's date
+    archived_count = archive_old_vulnerabilities()
+    print(f"[OK] Archived {archived_count} vulnerabilities (not seen today)")
     
     print("\n" + "=" * 60)
     print("  [OK] PIPELINE COMPLETE!")
