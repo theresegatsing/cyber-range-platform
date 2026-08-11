@@ -13,8 +13,9 @@ from datetime import datetime, timedelta
 # IMPORT AND PROCESS VULNERABILITIES
 # ============================================================
 
+from database import get_platform_vulnerability  # add to existing import line
+
 def import_vulnerabilities():
-    """Import vulnerabilities from scanner, score with AI, save to platform."""
     print("[INFO] Reading vulnerabilities from scanner database (READ ONLY)...")
     vulnerabilities = fetch_vulnerabilities_from_scanner()
 
@@ -33,18 +34,18 @@ def import_vulnerabilities():
 
         print(f"\n{'='*50}")
         print(f"Processing: {cve_id}")
-        print(f"CVSS Score: {cvss_score}")
-        print(f"Asset: {asset}")
-        print(f"KEV: {'Yes' if is_kev else 'No'}")
 
-        print("[AI] Scoring...")
-        interestingness = score_cve_interestingness(cve_id, description, cvss_score, is_kev)
-        print(f"   Interestingness Score: {interestingness}/10")
+        existing = get_platform_vulnerability(cve_id)
 
-        # Always save — refreshing last_seen for anything the scanner still
-        # reports, regardless of today's score. save_to_platform only gates
-        # NEW CVEs by score; existing ones always get their last_seen touched.
-        save_to_platform(cve_id, description, cvss_score, asset, is_kev, interestingness)
+        if existing:
+            # Already scored before — score stays static, skip the AI call.
+            print(f"[SKIP-SCORE] {cve_id} already in platform (score={existing['interestingness_score']}). Just refreshing last_seen.")
+            save_to_platform(cve_id, description, cvss_score, asset, is_kev, interestingness_score=None)
+        else:
+            print("[AI] Scoring (new CVE)...")
+            interestingness = score_cve_interestingness(cve_id, description, cvss_score, is_kev)
+            print(f"   Interestingness Score: {interestingness}/10")
+            save_to_platform(cve_id, description, cvss_score, asset, is_kev, interestingness)
 
     print("\n[OK] Import complete.")
 # ============================================================

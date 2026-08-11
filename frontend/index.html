@@ -748,6 +748,7 @@
             </div>
         </header>
 
+        <div id="error" style="display:none; padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 4px;"></div>
         <!-- TAB BAR -->
         <div class="tab-bar" id="tab-bar">
             <button class="tab active" id="tab-active" onclick="switchTab('active')">Active</button>
@@ -832,11 +833,23 @@
                 <div class="panel-help">
                     <div class="panel-header">Help</div>
                     <div class="help-content" id="help-content">
+                        
                         <div class="brief-text" id="help-brief">Start a mission to see the brief here.</div>
+                        <button class="btn btn-primary" id="get-hint-btn" onclick="requestHint()" style="width:100%; margin-bottom:8px;">Get Hint</button>
                         <div class="hint" id="help-hint">
                             <span class="hint-icon">◆</span>
-                            AI hints will appear here when you're stuck or idle.
+                            Click "Get Hint" if you're stuck.
+                        </div>  
+                        
+                        <div style="margin-top:12px;">
+                            <label style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Describe your goal:</label>
+                            <textarea id="goal-input" rows="2" placeholder="e.g. scan the target for open ports"
+                                style="width:100%;padding:8px;border:1px solid #e8e0d8;border-radius:6px;font-family:inherit;font-size:12px;resize:vertical;"></textarea>
+                            <div id="goal-word-count" style="font-size:11px;color:#94a3b8;margin:2px 0 6px;">0 / 15 words</div>
+                            <button class="btn btn-secondary" id="get-command-btn" onclick="requestCommand()" style="width:100%;">Get Command</button>
+                            <div class="hint" id="command-result" style="margin-top:8px; display:none;"></div>
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -937,7 +950,7 @@
         function fetchAIHint(trigger, details) {
             const actions = lastCommands.slice(-5).join(', ');
             const cveDesc = currentMissionData?.description || '';
-            document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Thinking...';
+            document.getElementById('help-hint').innerHTML = '<span class="hint-icon"></span> Thinking...';
             const url = `${API_BASE}/ai/hint?task_name=Step ${currentStep+1}&current_step=Step ${currentStep+1}&actions=${encodeURIComponent(actions)}&cve_description=${encodeURIComponent(cveDesc)}`;
             fetch(url)
                 .then(res => res.json())
@@ -946,11 +959,58 @@
                     let triggerText = '';
                     if (trigger === 'idle') triggerText = '⏳ You\'ve been idle for ' + Math.round(details) + ' seconds. ';
                     else if (trigger === 'failure') triggerText = '✗ You\'ve tried this step multiple times. ';
-                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> ' + triggerText + hint;
+                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon"></span> ' + triggerText + hint;
                 })
                 .catch(err => {
-                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Could not fetch hint: ' + err.message;
+                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon"></span> Could not fetch hint: ' + err.message;
                 });
+        }
+
+        
+        // add this at top level, e.g. right after fetchAIHint's closing brace:
+        function requestHint() {
+            fetchAIHint('manual', null);
+        }
+
+        const MAX_GOAL_WORDS = 15;
+
+        document.getElementById('goal-input')?.addEventListener('input', function() {
+            const words = this.value.trim().split(/\s+/).filter(Boolean);
+            const counter = document.getElementById('goal-word-count');
+            const btn = document.getElementById('get-command-btn');
+            counter.textContent = words.length + ' / ' + MAX_GOAL_WORDS + ' words';
+            if (words.length > MAX_GOAL_WORDS) {
+                counter.style.color = '#ef4444';
+                btn.disabled = true;
+            } else {
+                counter.style.color = '#94a3b8';
+                btn.disabled = false;
+            }
+        });
+
+        function requestCommand() {
+            const input = document.getElementById('goal-input');
+            const goal = input.value.trim();
+            const words = goal.split(/\s+/).filter(Boolean);
+            const resultDiv = document.getElementById('command-result');
+            resultDiv.style.display = 'block';
+
+            if (!goal) {
+                resultDiv.textContent = 'Describe what you\'re trying to do first.';
+                return;
+            }
+            if (words.length > MAX_GOAL_WORDS) {
+                resultDiv.textContent = 'Please shorten your goal to ' + MAX_GOAL_WORDS + ' words or fewer.';
+                return;
+            }
+
+            resultDiv.textContent = 'Thinking...';
+            const cveDesc = currentMissionData?.description || '';
+            const url = `${API_BASE}/ai/command_suggest?goal=${encodeURIComponent(goal)}&current_step=Step ${currentStep+1}&cve_description=${encodeURIComponent(cveDesc)}`;
+            fetch(url)
+                .then(res => res.json())
+                .then(data => { resultDiv.textContent = data.suggestion || 'Could not generate a suggestion.'; })
+                .catch(err => { resultDiv.textContent = 'Could not fetch suggestion: ' + err.message; });
         }
 
         function handleTerminalInput(data) {
@@ -1134,9 +1194,6 @@
             }
             failedAttempts++;
             term.writeln('\x1b[2;37mCommand not recognized. Try: nmap, curl, cat, index=main, help, clear, next\x1b[0m');
-            if (failedAttempts >= 2) {
-                fetchAIHint('failure', failedAttempts);
-            }
             term.write('\x1b[1;36m$ \x1b[0m');
         }
 
@@ -1264,7 +1321,6 @@
         function enterMission() {
             closeModal();
             isMissionActive = true;
-            startIdleCheck();
             document.getElementById('view-dashboard').style.display = 'none';
             document.getElementById('view-mission').classList.add('active');
             document.getElementById('tab-bar').style.display = 'none';
@@ -1285,11 +1341,14 @@
             document.getElementById('rule-result').textContent = '';
             document.getElementById('rule-input').value = '';
             document.getElementById('wtab-splunk').classList.add('disabled');
+            document.getElementById('goal-input').value = '';
+            document.getElementById('goal-word-count').textContent = '0 / 15 words';
+            document.getElementById('command-result').style.display = 'none';
             lastCommandTime = Date.now();
             failedAttempts = 0;
             lastCommands = [];
             hintTriggered = false;
-            document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> AI hints will appear here when you\'re stuck or idle.';
+            document.getElementById('help-hint').innerHTML = '<span class="hint-icon"></span> AI hints will appear here once you click on the button';
             if (term) {
                 term.clear();
                 term.write('\x1b[1;36m$ \x1b[0m');
@@ -1520,6 +1579,9 @@
             document.getElementById('rule-input').value = '';
             document.getElementById('submit-report-btn').disabled = true;
             document.getElementById('wtab-splunk').classList.add('disabled');
+            document.getElementById('goal-input').value = '';
+            document.getElementById('goal-word-count').textContent = '0 / 15 words';
+            document.getElementById('command-result').style.display = 'none';
             var reportTemplate = document.getElementById('report-template');
             if (reportTemplate) {
                 reportTemplate.remove();

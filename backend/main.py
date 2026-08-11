@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import socket
 import time
 from database import get_archived_vulnerabilities
+from ai_helper import generate_mission_brief, generate_blue_team_brief, generate_hint, grade_report, score_cve_interestingness, generate_command_suggestion
 
 
 # Load environment variables
@@ -127,7 +128,6 @@ def stop_container():
 # ============================================================
 # AI ENDPOINTS
 # ============================================================
-from ai_helper import generate_mission_brief, generate_blue_team_brief, generate_hint, grade_report, score_cve_interestingness
 
 @app.get("/ai/brief")
 def get_mission_brief(cve_id: str, description: str, cvss_score: float, asset: str = "the application"):
@@ -154,6 +154,11 @@ def grade_learner_report(report: str, findings: list):
 def score_cve(cve_id: str, description: str, cvss_score: float, is_kev: bool = False):
     score = score_cve_interestingness(cve_id, description, cvss_score, is_kev)
     return {"cve": cve_id, "interestingness_score": score}
+
+@app.get("/ai/command_suggest")
+def get_command_suggestion(goal: str, current_step: str, cve_description: str = ""):
+    suggestion = generate_command_suggestion(goal, current_step, cve_description)
+    return {"suggestion": suggestion}
 
 # ============================================================
 # MISSION MANAGEMENT

@@ -162,14 +162,16 @@ def fetch_vulnerabilities_from_scanner():
 # ============================================================
 # YOUR PLATFORM DATABASE FUNCTIONS (PostgreSQL)
 # ============================================================
-def save_to_platform(cve_id: str, description: str, cvss_score: float, asset: str, is_kev: bool, interestingness_score: int):
-    """Save/refresh a vulnerability in YOUR PostgreSQL platform database.
+def get_platform_vulnerability(cve_id: str):
+    """Look up an existing platform row by cve_id, or None."""
+    conn = get_platform_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM platform_vulnerabilities WHERE cve_id = %s", (cve_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
 
-    IMPORTANT: this is called for every CVE the scanner reports this run,
-    not just the ones scoring >=5. That's what keeps archive_old_vulnerabilities()
-    from wrongly archiving a CVE that's still live but happened to score
-    lower on this particular AI pass.
-    """
+def save_to_platform(cve_id: str, description: str, cvss_score: float, asset: str, is_kev: bool, interestingness_score: int = None):
     conn = get_platform_connection()
     cursor = conn.cursor()
     today = datetime.now()
@@ -179,22 +181,19 @@ def save_to_platform(cve_id: str, description: str, cvss_score: float, asset: st
 
     if existing:
         existing_id, existing_status = existing
-        # It was seen again by the scanner -> it's no longer "not seen today".
-        # If it had been archived, bring it back to pending. Never touch an
-        # 'active' mission that's currently in progress.
         new_status = 'pending' if existing_status == 'archived' else existing_status
 
+        # interestingness_score is intentionally NOT in this UPDATE —
+        # it's set once at insert time and stays static after that.
         cursor.execute('''
-            UPDATE platform_vulnerabilities
-            SET last_seen = %s, cvss_score = %s, is_kev = %s, interestingness_score = %s,
+            UPDATE platform_vulnerabilities 
+            SET last_seen = %s, cvss_score = %s, is_kev = %s,
                 description = %s, asset = %s, platform_status = %s
             WHERE cve_id = %s
-        ''', (today, cvss_score, is_kev, interestingness_score, description, asset, new_status, cve_id))
-        print(f"[OK] Updated in platform: {cve_id} (last_seen refreshed, status={new_status})")
+        ''', (today, cvss_score, is_kev, description, asset, new_status, cve_id))
+        print(f"[OK] Updated in platform: {cve_id} (last_seen refreshed, status={new_status}, score unchanged)")
     else:
-        # Only brand-new CVEs are gated by the interestingness score —
-        # no point ever surfacing a boring one as a mission candidate.
-        if interestingness_score < 5:
+        if interestingness_score is None or interestingness_score < 5:
             print(f"[SKIP] {cve_id} is new but not interesting (score {interestingness_score}). Not added.")
             conn.close()
             return
@@ -204,7 +203,7 @@ def save_to_platform(cve_id: str, description: str, cvss_score: float, asset: st
             (cve_id, description, cvss_score, asset, severity, is_kev, interestingness_score, first_detected, last_seen, platform_status)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (cve_id, description, cvss_score, asset, severity, is_kev, interestingness_score, today, today, 'pending'))
-        print(f"[OK] Added to platform: {cve_id}")
+        print(f"[OK] Added to platform: {cve_id} (score {interestingness_score}, now static)")
 
     conn.commit()
     conn.close()

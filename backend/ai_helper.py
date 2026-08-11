@@ -189,3 +189,31 @@ Score:
         return min(max(score, 1), 10)
     except:
         return 5
+
+
+def generate_command_suggestion(goal: str, current_step: str, cve_description: str = "") -> str:
+    """Suggest the exact simulated-terminal command that matches the learner's stated goal."""
+    prompt = f"""
+You are helping a learner in a cybersecurity training simulator.
+
+The simulator's terminal ONLY understands this fixed set of command patterns:
+- nmap <target>              -> runs reconnaissance, reveals open ports
+- curl "<url>?id=1 OR 1=1"   -> attempts a SQL injection style request against the target
+- cat brief                  -> reprints the mission brief
+- index=main <search terms>  -> searches Splunk logs (Blue Team phase only)
+- help                       -> lists available commands
+- clear                      -> clears the terminal
+
+The learner is on: {current_step}
+Vulnerability context: {cve_description}
+The learner describes their goal in their own words: "{goal}"
+
+Based ONLY on the commands listed above, tell them the exact command to type next.
+- Give ONE command, on its own line, exactly as they should type it
+- Add one short sentence explaining what it does
+- Do NOT invent commands or flags outside the list above
+- Keep the whole response under 40 words
+
+Command:
+"""
+    return query_ollama(prompt)
