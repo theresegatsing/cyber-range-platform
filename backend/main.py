@@ -240,8 +240,20 @@ def start_mission(vulnerability_id: int):
                 "custom-vuln-app",
                 detach=True,
                 ports={'80/tcp': free_port},
-                name=container_name
+                name=container_name,
+                logging={
+                    "driver": "splunk",
+                    "options": {
+                        "splunk-token": "bb056fbe-a182-4ff6-8612-803df97d6d24",
+                        "splunk-url": "https://172.16.25.2:8088",
+                        "splunk-insecureskipverify": "true",
+                        "splunk-sourcetype": "docker",
+                        "splunk-index": "cyber_range",
+                        "tag": f"mission-{vulnerability_id}"
+                    }
+                }
             )
+
             print(f"Container {container_name} started on port {free_port}")
             
             cursor.execute("""

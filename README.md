@@ -309,3 +309,70 @@ The AI reads the CVE description and generates **unique, professional mission br
 - **Professional**: No casual greetings or passive voice.
 - **Actionable**: The learner knows exactly what to do.
 - **Scalable**: Works with any CVE description.
+
+
+## Splunk Integration Setup
+Overview
+The Cyber Range Platform forwards logs from every vulnerable container to Splunk using the Splunk HTTP Event Collector (HEC). This allows learners to search for their attack traces during the Blue Team phase.
+
+1. Splunk Admin Setup (First Time)
+These steps must be completed once by a Splunk administrator.
+
+Step 1.1: Create the Splunk Index
+Log in to Splunk Web UI (http://<splunk-ip>:8000).
+
+Go to Settings → Indexes.
+
+Click "New Index".
+
+Fill in:
+
+Index Name: cyber_range
+
+Data Type: Events
+
+Max Data Size: Set to your preference (e.g., 100 GB)
+
+Click "Save".
+
+Step 1.2: Enable HTTP Event Collector (HEC)
+Go to Settings → Data Inputs → HTTP Event Collector.
+
+Click "Global Settings" (top right).
+
+Set Enabled to "Yes".
+
+Under "Allowed Indexes", select cyber_range.
+
+Click "Save".
+
+Step 1.3: Create a HEC Token
+In Settings → Data Inputs → HTTP Event Collector, click "New Token".
+
+Fill in:
+
+Name: cyber_range_token (or any descriptive name)
+
+Default Index: Select cyber_range
+
+Allowed Indexes: Add cyber_range
+
+Click "Next".
+
+Verify the settings and click "Submit".
+
+Copy the token immediately – it will not be shown again.
+
+#### Build and Run the Container
+# Navigate to project root
+cd C:\Users\gatsi\github\cyber-range-platform
+
+# Build the Docker image
+docker build -t custom-vuln-app ./containers
+
+# Start the container with Splunk logging
+cd containers
+docker-compose up -d
+
+# Verify it's running
+docker ps
