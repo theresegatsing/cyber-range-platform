@@ -19,7 +19,11 @@ docker build -t custom-vuln-app ./containers
 http://localhost:8000/
 
 ```
+4) start a container inside containers directory
+```bash
 
+docker-compose up -d
+```
 ## Phase 1 (Weeks 1-2)
 Building base Docker containers with vulnerable applications.
 
