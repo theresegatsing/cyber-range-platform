@@ -1,8 +1,12 @@
 import sqlite3
 from flask import Flask, request, redirect
 import os
+import logging
 
 app = Flask(__name__)
+
+# Configure logging to print to stdout
+logging.basicConfig(level=logging.INFO)
 
 def init_db():
     conn = sqlite3.connect('database.db')
@@ -16,32 +20,32 @@ def init_db():
 
 @app.route('/')
 def home():
-    # Auto-redirect to the vulnerable endpoint with id=1
     return redirect('/vuln?id=1')
 
 @app.route('/vuln')
 def vuln():
     user_id = request.args.get('id')
     
-    # If no id provided, redirect to id=1
     if user_id is None:
         return redirect('/vuln?id=1')
     
     try:
         conn = sqlite3.connect('database.db')
         cursor = conn.cursor()
-        
-        # ⚠️ SQL INJECTION VULNERABILITY
         query = f"SELECT * FROM users WHERE id = {user_id}"
         cursor.execute(query)
         data = cursor.fetchall()
         conn.close()
         
         if len(data) >= 2:
+            # 🔥 Log the flag to stdout (so Splunk can capture it)
+            flag_msg = f"FLAG-FOUND: You retrieved {len(data)} users! Data: {data}"
+            app.logger.info(flag_msg)  # This goes to stdout → Splunk
             return f"🏴 FLAG-FOUND: You retrieved {len(data)} users! Data: {data}"
         else:
             return str(data)
     except Exception as e:
+        app.logger.error(f"SQL Error: {e}")
         return f"SQL Error: {e}"
 
 if __name__ == '__main__':
