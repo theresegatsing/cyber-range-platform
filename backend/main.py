@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response
+import httpx
 import docker
 from docker.types import LogConfig, HostConfig
 import requests
@@ -25,6 +26,53 @@ try:
 except Exception as e:
     print(f"❌ Failed to connect to Docker: {e}")
     docker_client = None
+
+
+# ===========
+# Forwarding logs to splunk
+#===========
+
+@app.api_route("/splunk-proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
+async def splunk_proxy(request: Request, path: str):
+    """Proxy requests to Splunk Web UI and remove X-Frame-Options header."""
+
+    # Build target URL (change IP/port if your Splunk is elsewhere)
+    target_url = f"http://172.16.25.2:8000/{path}"
+
+    # Forward query parameters
+    params = request.query_params
+
+    # Forward headers (remove host and content-length to avoid conflicts)
+    headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ["host", "content-length"]
+    }
+
+    # Read request body (if any)
+    body = await request.body()
+
+    # Send the request asynchronously
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.request(
+            method=request.method,
+            url=target_url,
+            params=params,
+            headers=headers,
+            content=body if body else None,
+            follow_redirects=True
+        )
+
+    # Remove the header that blocks iframe embedding
+    response_headers = dict(resp.headers)
+    response_headers.pop("x-frame-options", None)
+    # Optionally also remove Content-Security-Policy if it restricts framing
+    # response_headers.pop("content-security-policy", None)
+
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers=response_headers
+    )
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -246,7 +294,7 @@ def start_mission(vulnerability_id: int):
                 driver="splunk",
                 options={
                     "splunk-token": "bb056fbe-a182-4ff6-8612-803df97d6d24",
-                    "splunk-url": "https://172.16.25.2:8088",
+                    "splunk-url": "http://http://172.16.25.2:8000/en-US/app/search/search",
                     "splunk-insecureskipverify": "true",
                     "splunk-sourcetype": "docker",
                     "splunk-index": "cyber_range",
@@ -351,3 +399,35 @@ def run_scanner_import():
         return {"status": "error", "message": "Import timed out after 60 minutes"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.get("/missions/{vulnerability_id}/preview")
+def preview_mission(vulnerability_id: int):
+    try:
+        conn = get_platform_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute("SELECT * FROM platform_vulnerabilities WHERE id = %s", (vulnerability_id,))
+        vuln = cursor.fetchone()
+        conn.close()
+        if not vuln:
+            raise HTTPException(status_code=404, detail="Vulnerability not found")
+
+        # Generate (or retrieve) the red team brief. You could also store it in DB, but for now generate on the fly.
+        red_brief = generate_mission_brief(
+            vuln['cve_id'],
+            vuln['description'],
+            vuln['cvss_score'],
+            vuln['asset']
+        )
+
+        # Optionally generate blue brief too, but it's only shown after flag capture.
+        blue_brief = generate_blue_team_brief(vuln['cve_id'], vuln['description'])
+
+        return {
+            "cve_id": vuln['cve_id'],
+            "red_team_brief": red_brief,
+            "blue_team_brief": blue_brief,
+            "app_url": f"http://localhost:{find_free_port() or 8080}"   # placeholder, actual port will be assigned on start
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

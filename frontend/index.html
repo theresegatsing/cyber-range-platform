@@ -1326,7 +1326,7 @@
             document.getElementById('view-dashboard').style.display = 'none';
             document.getElementById('view-mission').classList.add('active');
             document.getElementById('tab-bar').style.display = 'none';
-            document.getElementById('mission-title').textContent = 'Starting mission...';
+            document.getElementById('mission-title').textContent = '';
 
             fetch(API_BASE + '/missions/' + currentMissionId + '/start', { method: 'POST' })
                 .then(res => res.json())
@@ -1428,7 +1428,7 @@
             else if (tab === 'splunk') {
                 splunk.classList.remove('hidden');
                 var iframe = document.getElementById('splunk-iframe');
-                if (iframe.src === 'about:blank') iframe.src = "http://172.16.25.2:8000";  
+                if (iframe.src === 'about:blank') iframe.src = "/splunk-proxy/en-US/app/search/search";  
             }
         }
 
