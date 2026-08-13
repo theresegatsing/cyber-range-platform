@@ -297,7 +297,7 @@ def get_top_interesting_vulnerabilities(limit: int = 10):
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute("""
         SELECT * FROM platform_vulnerabilities 
-        WHERE platform_status = 'pending' 
+        WHERE platform_status IN ('pending', 'active') 
         ORDER BY interestingness_score DESC
         LIMIT %s
     """, (limit,))
@@ -358,3 +358,4 @@ def get_archived_vulnerabilities(min_interestingness: int = 5):
     rows = cursor.fetchall()
     conn.close()
     return rows
+

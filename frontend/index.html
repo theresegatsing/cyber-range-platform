@@ -565,6 +565,8 @@
             border-radius: 8px;
             border: 1px solid #ccfbf1;
             flex-shrink: 0;
+            max-height: 240px;      
+            overflow-y: auto;   
         }
         .panel-workspace .workspace-content .blue-team-section.active { display: block; }
         .panel-workspace .workspace-content .blue-team-section .blue-brief {
@@ -1284,6 +1286,10 @@
 
         function refreshMissions() { loadMissions(); }
 
+        function closeModal() {
+            document.getElementById('mission-modal').classList.remove('active');
+        }
+
         function showMissionBrief(id) {
             currentMissionId = id;
             const modal = document.getElementById('mission-modal');
@@ -1292,7 +1298,7 @@
             document.getElementById('modal-red-brief').textContent = 'Loading mission brief...';
             document.getElementById('modal-enter-btn').disabled = true;
             document.getElementById('modal-enter-btn').textContent = 'Loading...';
-            fetch(API_BASE + '/missions/' + id + '/start', { method: 'POST' })
+            fetch(API_BASE + '/missions/' + id + '/preview')
                 .then(res => res.json())
                 .then(data => {
                     if (data.error) {
@@ -1300,7 +1306,7 @@
                         document.getElementById('modal-enter-btn').disabled = true;
                         return;
                     }
-                    currentMissionData = data;
+                    currentMissionData = data; // preview only — replaced with full data once entered
                     document.getElementById('modal-title').textContent = 'Mission: ' + data.cve_id;
                     document.getElementById('modal-red-brief').textContent = data.red_team_brief || 'No brief available.';
                     document.getElementById('modal-subtitle').textContent = 'Review your Red Team objectives.';
@@ -1314,53 +1320,62 @@
                 });
         }
 
-        function closeModal() {
-            document.getElementById('mission-modal').classList.remove('active');
-        }
-
         function enterMission() {
             closeModal();
             isMissionActive = true;
             document.getElementById('view-dashboard').style.display = 'none';
             document.getElementById('view-mission').classList.add('active');
             document.getElementById('tab-bar').style.display = 'none';
-            document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
-            currentStep = 0;
-            updateTasks(currentStep);
-            seconds = 0;
-            if (timerInterval) clearInterval(timerInterval);
-            timerInterval = setInterval(function() {
-                seconds++;
-                var mins = String(Math.floor(seconds / 60)).padStart(2, '0');
-                var secs = String(seconds % 60).padStart(2, '0');
-                document.getElementById('mission-timer').textContent = mins + ':' + secs;
-            }, 1000);
-            flagCaptured = false;
-            document.getElementById('submit-report-btn').disabled = true;
-            document.getElementById('blue-team-section').classList.remove('active');
-            document.getElementById('rule-result').textContent = '';
-            document.getElementById('rule-input').value = '';
-            document.getElementById('wtab-splunk').classList.add('disabled');
-            document.getElementById('goal-input').value = '';
-            document.getElementById('goal-word-count').textContent = '0 / 15 words';
-            document.getElementById('command-result').style.display = 'none';
-            lastCommandTime = Date.now();
-            failedAttempts = 0;
-            lastCommands = [];
-            hintTriggered = false;
-            document.getElementById('help-hint').innerHTML = '<span class="hint-icon"></span> AI hints will appear here once you click on the button';
-            if (term) {
-                term.clear();
-                term.write('\x1b[1;36m$ \x1b[0m');
-                currentInput = '';
-                cursorPosition = 0;
-                commandHistory = [];
-                historyIndex = 0;
-            }
-            if (currentMissionData.app_url) {
-                document.getElementById('app-iframe').src = currentMissionData.app_url;
-            }
-            switchWorkspace('terminal');
+            document.getElementById('mission-title').textContent = 'Starting mission...';
+
+            fetch(API_BASE + '/missions/' + currentMissionId + '/start', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('Failed to start mission: ' + data.error);
+                        exitMission();
+                        return;
+                    }
+                    currentMissionData = data; // now the real, full mission payload
+                    document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
+                    currentStep = 0;
+                    updateTasks(currentStep);
+                    seconds = 0;
+                    if (timerInterval) clearInterval(timerInterval);
+                    timerInterval = setInterval(function() {
+                        seconds++;
+                        var mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+                        var secs = String(seconds % 60).padStart(2, '0');
+                        document.getElementById('mission-timer').textContent = mins + ':' + secs;
+                    }, 1000);
+                    flagCaptured = false;
+                    document.getElementById('submit-report-btn').disabled = true;
+                    document.getElementById('blue-team-section').classList.remove('active');
+                    document.getElementById('rule-result').textContent = '';
+                    document.getElementById('rule-input').value = '';
+                    document.getElementById('wtab-splunk').classList.add('disabled');
+                    lastCommandTime = Date.now();
+                    failedAttempts = 0;
+                    lastCommands = [];
+                    hintTriggered = false;
+                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Click "Get Hint" if you\'re stuck.';
+                    if (term) {
+                        term.clear();
+                        term.write('\x1b[1;36m$ \x1b[0m');
+                        currentInput = '';
+                        cursorPosition = 0;
+                        commandHistory = [];
+                        historyIndex = 0;
+                    }
+                    if (currentMissionData.app_url) {
+                        document.getElementById('app-iframe').src = currentMissionData.app_url;
+                    }
+                    switchWorkspace('terminal');
+                })
+                .catch(err => {
+                    alert('Failed to start mission: ' + err.message);
+                    exitMission();
+                });
         }
 
         function updateTasks(step) {
@@ -1413,7 +1428,7 @@
             else if (tab === 'splunk') {
                 splunk.classList.remove('hidden');
                 var iframe = document.getElementById('splunk-iframe');
-                if (iframe.src === 'about:blank') iframe.src = 'https://www.splunk.com/';
+                if (iframe.src === 'about:blank') iframe.src = "http://172.16.25.2:8000";  
             }
         }
 
