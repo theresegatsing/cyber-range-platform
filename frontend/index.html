@@ -1326,10 +1326,9 @@
             document.getElementById('view-dashboard').style.display = 'none';
             document.getElementById('view-mission').classList.add('active');
             document.getElementById('tab-bar').style.display = 'none';
-            document.getElementById('mission-title').textContent = '';
-
+            document.getElementById('mission-title').textContent = 'Starting mission...';
             currentStep = 0;
-            updateTasks(currentStep); 
+            updateTasks(currentStep);   // render tasks immediately, don't wait on the fetch
 
             fetch(API_BASE + '/missions/' + currentMissionId + '/start', { method: 'POST' })
                 .then(res => res.json())
@@ -1339,10 +1338,8 @@
                         exitMission();
                         return;
                     }
-                    currentMissionData = data; // now the real, full mission payload
+                    currentMissionData = data;
                     document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
-                    currentStep = 0;
-                    updateTasks(currentStep);
                     seconds = 0;
                     if (timerInterval) clearInterval(timerInterval);
                     timerInterval = setInterval(function() {
@@ -1371,10 +1368,9 @@
                         historyIndex = 0;
                     }
                     if (currentMissionData.app_url) {
-
                         const iframeContainer = document.querySelector('#target-container .iframe-container');
                         if (currentMissionData.target_ready) {
-                            document.getElementById('app-iframe').src = currentMissionData.app_url;
+                            iframeContainer.innerHTML = '<iframe id="app-iframe" src="' + currentMissionData.app_url + '"></iframe>';
                         } else {
                             iframeContainer.innerHTML = '<div style="padding:20px;color:#94a3b8;">Target environment is still starting — try the Target tab again in a few seconds.</div>';
                             setTimeout(() => {
