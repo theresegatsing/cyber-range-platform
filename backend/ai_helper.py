@@ -93,6 +93,7 @@ IMPORTANT REQUIREMENTS:
 - MUST mention writing a detection rule
 - Be professional and clear
 - Do NOT mention the CVE number
+- Do not have more than 4 phrases in the whole mission brief
 
 Example format (DO NOT COPY – use as style guide):
 "Your mission is to investigate the Splunk logs from the stored XSS attack on OpenCTI. You must locate the attack traces in the Splunk logs and write a detection rule to prevent session theft. Use Splunk search queries to identify the malicious payload and the affected users."
@@ -191,6 +192,9 @@ Score:
         return 5
 
 
+#-----
+# generate_command_suggestion
+#-----
 def generate_command_suggestion(goal: str, current_step: str, cve_description: str = "") -> str:
     """Suggest the exact simulated-terminal command that matches the learner's stated goal."""
     prompt = f"""
@@ -217,3 +221,55 @@ Based ONLY on the commands listed above, tell them the exact command to type nex
 Command:
 """
     return query_ollama(prompt)
+
+
+VULN_PATTERNS = ["sql_injection", "command_injection", "path_traversal", "reflected_xss"]
+
+#------
+# classify vulnerability pattern
+#------
+
+def classify_vulnerability_pattern(cve_id: str, description: str) -> str:
+    """Map a CVE to the closest supported vulnerability template class."""
+    prompt = f"""
+You are classifying a CVE into ONE vulnerability category for a training simulator.
+
+CVE: {cve_id}
+Description: {description}
+
+Choose exactly ONE from this list (respond with ONLY the exact string, nothing else):
+{', '.join(VULN_PATTERNS)}
+
+Category:
+"""
+    response = query_ollama(prompt).strip().lower()
+    for pattern in VULN_PATTERNS:
+        if pattern in response:
+            return pattern
+    return "sql_injection"  # safe fallback — never return an unsupported class
+
+
+
+#-----
+# generate_template_params
+#----
+def generate_template_params(pattern: str, cve_id: str, description: str) -> dict:
+    """Fill CVE-specific flavor text into a template (table names, error strings, etc)."""
+    prompt = f"""
+You are customizing a {pattern} training lab to match a specific CVE.
+
+CVE: {cve_id}
+Description: {description}
+
+Return ONLY JSON with these exact keys (invent realistic, CVE-appropriate values):
+{{"table_name": "...", "column_names": ["...", "..."], "app_title": "...", "sample_row_1": "...", "sample_row_2": "..."}}
+"""
+    response = query_ollama(prompt)
+    try:
+        return json.loads(response)
+    except Exception:
+        return {
+            "table_name": "users", "column_names": ["id", "username", "secret"],
+            "app_title": f"{cve_id} Training Lab",
+            "sample_row_1": "1, admin, secretpass", "sample_row_2": "2, john, doe123"
+        }

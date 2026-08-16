@@ -1,0 +1,27 @@
+from flask import Flask, request
+import subprocess
+import os
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return '<h3>{app_title}</h3><form action="/vuln"><input name="host" placeholder="host to ping"><button>Go</button></form>'
+
+@app.route('/vuln')
+def vuln():
+    host = request.args.get('host', '')
+    if not host:
+        return "Provide a host to ping."
+    try:
+        # intentionally vulnerable — no sanitization of user input
+        result = subprocess.run(f"ping -c 1 {{host}}", shell=True, capture_output=True, text=True, timeout=5)
+        output = result.stdout + result.stderr
+        if ';' in host or '|' in host or '&&' in host:
+            return f"FLAG-FOUND: command injection succeeded! Output: {{output}}"
+        return f"<pre>{{output}}</pre>"
+    except Exception as e:
+        return f"Error: {{e}}"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80)

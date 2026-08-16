@@ -1,0 +1,44 @@
+import sqlite3
+from flask import Flask, request, redirect
+import os
+
+app = Flask(__name__)
+TABLE = "{table_name}"
+COLS = {column_names}
+
+def init_db():
+    conn = sqlite3.connect('database.db')
+    c = conn.cursor()
+    c.execute(f"CREATE TABLE IF NOT EXISTS {{TABLE}} ({{', '.join(COLS)}})")
+    c.execute(f"DELETE FROM {{TABLE}}")
+    c.execute(f"INSERT INTO {{TABLE}} VALUES ({sample_row_1})")
+    c.execute(f"INSERT INTO {{TABLE}} VALUES ({sample_row_2})")
+    conn.commit()
+    conn.close()
+
+@app.route('/')
+def home():
+    return redirect('/vuln?id=1')
+
+@app.route('/vuln')
+def vuln():
+    user_id = request.args.get('id')
+    if user_id is None:
+        return redirect('/vuln?id=1')
+    try:
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        query = f"SELECT * FROM {{TABLE}} WHERE {{COLS[0]}} = {{user_id}}"  # intentionally vulnerable
+        cursor.execute(query)
+        data = cursor.fetchall()
+        conn.close()
+        if len(data) >= 2:
+            return f"FLAG-FOUND: You retrieved {{len(data)}} rows from {{TABLE}}! Data: {{data}}"
+        return str(data)
+    except Exception as e:
+        return f"SQL Error: {{e}}"
+
+if __name__ == '__main__':
+    if not os.path.exists('database.db'):
+        init_db()
+    app.run(host='0.0.0.0', port=80)

@@ -1328,6 +1328,9 @@
             document.getElementById('tab-bar').style.display = 'none';
             document.getElementById('mission-title').textContent = '';
 
+            currentStep = 0;
+            updateTasks(currentStep); 
+
             fetch(API_BASE + '/missions/' + currentMissionId + '/start', { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
@@ -1368,7 +1371,16 @@
                         historyIndex = 0;
                     }
                     if (currentMissionData.app_url) {
-                        document.getElementById('app-iframe').src = currentMissionData.app_url;
+
+                        const iframeContainer = document.querySelector('#target-container .iframe-container');
+                        if (currentMissionData.target_ready) {
+                            document.getElementById('app-iframe').src = currentMissionData.app_url;
+                        } else {
+                            iframeContainer.innerHTML = '<div style="padding:20px;color:#94a3b8;">Target environment is still starting — try the Target tab again in a few seconds.</div>';
+                            setTimeout(() => {
+                                iframeContainer.innerHTML = '<iframe id="app-iframe" src="' + currentMissionData.app_url + '"></iframe>';
+                            }, 5000);
+                        }
                     }
                     switchWorkspace('terminal');
                 })
@@ -1379,6 +1391,7 @@
         }
 
         function updateTasks(step) {
+     
             var tasks = [
                 'Reconnaissance',
                 'Exploit Vulnerability',
@@ -1428,7 +1441,7 @@
             else if (tab === 'splunk') {
                 splunk.classList.remove('hidden');
                 var iframe = document.getElementById('splunk-iframe');
-                if (iframe.src === 'about:blank') iframe.src = "/splunk-proxy/en-US/app/search/search";  
+                iframe.src = "/splunk-proxy/en-US/app/search/search";            
             }
         }
 

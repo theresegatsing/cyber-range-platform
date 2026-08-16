@@ -11,6 +11,7 @@ import psycopg2.extras
 from dotenv import load_dotenv
 import socket
 import time
+from container_builder import build_cve_image  
 
 # Load environment variables
 load_dotenv()
@@ -34,39 +35,24 @@ except Exception as e:
 
 @app.api_route("/splunk-proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
 async def splunk_proxy(request: Request, path: str):
-    """Proxy requests to Splunk Web UI and remove X-Frame-Options header."""
-
-    # Build target URL (change IP/port if your Splunk is elsewhere)
     target_url = f"http://172.16.25.2:8000/{path}"
-
-    # Forward query parameters
     params = request.query_params
-
-    # Forward headers (remove host and content-length to avoid conflicts)
-    headers = {
-        k: v for k, v in request.headers.items()
-        if k.lower() not in ["host", "content-length"]
-    }
-
-    # Read request body (if any)
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in ["host", "content-length"]}
     body = await request.body()
 
-    # Send the request asynchronously
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         resp = await client.request(
             method=request.method,
             url=target_url,
             params=params,
             headers=headers,
             content=body if body else None,
-            follow_redirects=True
         )
 
-    # Remove the header that blocks iframe embedding
     response_headers = dict(resp.headers)
-    response_headers.pop("x-frame-options", None)
-    # Optionally also remove Content-Security-Policy if it restricts framing
-    # response_headers.pop("content-security-policy", None)
+    response_headers.pop("x-frame-options", None)   # Allow iframe embedding
+    response_headers.pop("content-length", None)    # ⬅️ Remove to avoid mismatch
+    response_headers.pop("content-encoding", None)
 
     return Response(
         content=resp.content,
@@ -242,13 +228,14 @@ def get_top_vulnerabilities(limit: int = 100):
 # ============================================================
 # START MISSION – FIXED
 # ============================================================
+
 @app.post("/missions/{vulnerability_id}/start")
 def start_mission(vulnerability_id: int):
     try:
         conn = get_platform_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        # 1. FETCH THE VULNERABILITY FIRST (this was missing)
+        # 1. FETCH THE VULNERABILITY FIRST
         cursor.execute("SELECT * FROM platform_vulnerabilities WHERE id = %s", (vulnerability_id,))
         vuln = cursor.fetchone()
 
@@ -256,7 +243,7 @@ def start_mission(vulnerability_id: int):
             conn.close()
             return {"error": "Vulnerability not found"}
 
-        # 2. Determine new status: pending → active, otherwise keep unchanged
+        # 2. Determine new status: pending -> active, otherwise keep unchanged
         new_status = vuln['platform_status']
         if new_status == 'pending':
             new_status = 'active'
@@ -289,12 +276,17 @@ def start_mission(vulnerability_id: int):
             except docker.errors.NotFound:
                 pass
 
-            # 3. Create Splunk log config
+            # 3. Build (or reuse cached) image matching THIS specific CVE
+            print(f"🏗️  Resolving vulnerable environment for {vuln['cve_id']}...")
+            image_tag = build_cve_image(docker_client, vuln['cve_id'], vuln['description'])
+            print(f"   Using image: {image_tag}")
+
+            # 4. Create Splunk log config
             log_config = LogConfig(
                 driver="splunk",
                 options={
                     "splunk-token": "bb056fbe-a182-4ff6-8612-803df97d6d24",
-                    "splunk-url": "http://http://172.16.25.2:8000/en-US/app/search/search",
+                    "splunk-url": "https://172.16.25.2:8088",
                     "splunk-insecureskipverify": "true",
                     "splunk-sourcetype": "docker",
                     "splunk-index": "cyber_range",
@@ -302,25 +294,27 @@ def start_mission(vulnerability_id: int):
                 }
             )
 
-            # 4. Use low-level API to create container with host config
+            # 5. Use low-level API to create container with host config
             host_config = docker_client.api.create_host_config(
                 port_bindings={80: free_port},
                 log_config=log_config
             )
 
             container_id = docker_client.api.create_container(
-                image="custom-vuln-app",
+                image=image_tag,          # <-- was "custom-vuln-app", now per-CVE
                 host_config=host_config,
                 name=container_name,
                 detach=True
             )
 
             docker_client.api.start(container=container_id)
+            ready = wait_for_container_ready(free_port)
+            print(f"Target ready: {ready}")
 
             container = docker_client.containers.get(container_name)
             print(f"Container {container_name} started on port {free_port} with Splunk logging")
 
-            # 5. Update vulnerability status – ONLY if it was pending, otherwise leave as is
+            # 6. Update vulnerability status – ONLY if it was pending, otherwise leave as is
             if vuln['platform_status'] == 'pending':
                 cursor.execute("""
                     UPDATE platform_vulnerabilities 
@@ -329,7 +323,7 @@ def start_mission(vulnerability_id: int):
                 """, (vulnerability_id,))
             # If archived, we do NOT update it – it stays archived
 
-            # 6. Insert mission record
+            # 7. Insert mission record
             cursor.execute("""
                 INSERT INTO missions (vulnerability_id, cve_id, red_team_brief, blue_team_brief, status, created_at)
                 VALUES (%s, %s, %s, %s, 'active', %s)
@@ -431,3 +425,18 @@ def preview_mission(vulnerability_id: int):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+def wait_for_container_ready(port: int, timeout: int = 15) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            r = requests.get(f"http://localhost:{port}/", timeout=1)
+            if r.status_code < 500:
+                return True
+        except requests.exceptions.RequestException:
+            pass
+        time.sleep(0.5)
+    return False

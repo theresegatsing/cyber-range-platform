@@ -376,3 +376,14 @@ docker-compose up -d
 
 # Verify it's running
 docker ps
+
+
+## Prerequisites
+
+- **Docker Desktop** (or Docker Engine) must be installed and **running** before starting the backend.
+- The backend uses Docker’s API to manage mission containers. If Docker is not running, you will see:
+
+- Verify Docker is ready with:
+```bash
+docker version
+```
