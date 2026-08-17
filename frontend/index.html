@@ -1027,6 +1027,8 @@
         }
 
         function handleTerminalInput(data) {
+            if (commandRunning) return;
+
             if (data === '\r') {
                 term.write('\r\n');
                 const cmd = currentInput.trim();
@@ -1142,80 +1144,149 @@
             }
         }
 
+        let commandRunning = false;
+        let currentTargetPath = '/';
+
+        function prompt_() { term.write('\x1b[1;36m$ \x1b[0m'); }
+
         function processCommand(cmd) {
-            if (!cmd) { term.write('\x1b[1;36m$ \x1b[0m'); return; }
+            if (!cmd) { prompt_(); return; }
             const lowerCmd = cmd.toLowerCase();
-            const pattern = currentMissionData?.pattern || 'sql_injection';
 
-            if (cmd === 'next') { forceNextStep(); term.write('\x1b[1;36m$ \x1b[0m'); return; }
+            if (cmd === 'next') { forceNextStep(); prompt_(); return; }
 
-            if (lowerCmd.includes('cat') && lowerCmd.includes('brief')) {
-                term.writeln('\x1b[2;37m' + (currentMissionData?.red_team_brief || 'No brief available.') + '\x1b[0m');
-                term.write('\x1b[1;36m$ \x1b[0m');
+            if (cmd === 'help') {
+                term.writeln('\x1b[2;37mCommands:\x1b[0m');
+                term.writeln('\x1b[2;37m  nmap <target>            recon the target\x1b[0m');
+                term.writeln('\x1b[2;37m  curl "<url or /path>"    send a REAL request to the target\x1b[0m');
+                term.writeln('\x1b[2;37m  cat brief                reprint the mission brief\x1b[0m');
+                term.writeln('\x1b[2;37m  index=main <terms>       search Splunk (Blue Team phase)\x1b[0m');
+                term.writeln('\x1b[2;37m  clear | next | help\x1b[0m');
+                prompt_();
                 return;
             }
 
-            if (lowerCmd.includes('nmap')) {
+            if (cmd === 'clear') { term.clear(); prompt_(); return; }
+
+            if (lowerCmd.startsWith('cat') && lowerCmd.includes('brief')) {
+                term.writeln('\x1b[2;37m' + (currentMissionData?.red_team_brief || 'No brief available.') + '\x1b[0m');
+                prompt_();
+                return;
+            }
+
+            if (lowerCmd.startsWith('nmap')) {
+                const port = currentMissionData?.container_port || 80;
                 term.writeln('\x1b[2;37mStarting Nmap 7.94\x1b[0m');
-                term.writeln('\x1b[2;37mPORT   STATE SERVICE\x1b[0m');
-                term.writeln('\x1b[2;37m80/tcp open  http\x1b[0m');
+                term.writeln('\x1b[2;37mPORT     STATE SERVICE\x1b[0m');
+                term.writeln('\x1b[2;37m' + port + '/tcp open  http\x1b[0m');
                 if (currentStep === 0) {
-                    term.writeln('\x1b[1;32mPort 80 is open. Now exploit the vulnerability.\x1b[0m');
+                    term.writeln('\x1b[1;32mHTTP service found. Explore it with: curl "/"\x1b[0m');
                     currentStep = 1;
                     updateTasks(currentStep);
                     failedAttempts = 0;
                 }
-                term.write('\x1b[1;36m$ \x1b[0m');
+                prompt_();
                 return;
             }
 
-            if (lowerCmd.includes('curl')) {
-                let exploited = false;
-                if (pattern === 'sql_injection' && (lowerCmd.includes('or') || lowerCmd.includes('%20or'))) {
-                    term.writeln('\x1b[1;32mFLAG-FOUND: You retrieved 2 users! Data: [(1, \'admin\', \'secretpass\'), (2, \'john\', \'doe123\')]\x1b[0m');
-                    exploited = true;
-                } else if (pattern === 'command_injection' && (lowerCmd.includes(';') || lowerCmd.includes('|') || lowerCmd.includes('&&'))) {
-                    term.writeln('\x1b[1;32mFLAG-FOUND: command injection succeeded via chained shell command!\x1b[0m');
-                    exploited = true;
-                } else if (pattern === 'path_traversal' && lowerCmd.includes('..')) {
-                    term.writeln('\x1b[1;32mFLAG-FOUND: escaped the sandbox directory and read a protected file!\x1b[0m');
-                    exploited = true;
-                } else if (pattern === 'reflected_xss' && lowerCmd.includes('<script>')) {
-                    term.writeln('\x1b[1;32mFLAG-FOUND: payload reflected unsanitized in the response!\x1b[0m');
-                    exploited = true;
-                } else if (pattern === 'unsupported') {
-                    term.writeln('\x1b[1;33mThis mission has no working exploit path yet — check the Target tab for details.\x1b[0m');
-                } else {
-                    term.writeln('\x1b[2;37mRequest sent, but that doesn\'t look like a working exploit for this vulnerability.\x1b[0m');
-                }
-                if (exploited) { captureFlag(); failedAttempts = 0; }
-                term.write('\x1b[1;36m$ \x1b[0m');
-                return;
-            }
-
-            if (lowerCmd.includes('index=')) {
+            if (lowerCmd.startsWith('index=')) {
                 term.writeln('\x1b[2;37mFound 1 event\x1b[0m');
-                term.writeln('\x1b[2;37m2026-07-29 14:32:22 FLAG-FOUND: admin\x1b[0m');
+                term.writeln('\x1b[2;37m' + new Date().toISOString().slice(0,19).replace('T',' ') +
+                            ' FLAG-FOUND ' + (currentMissionData?.cve_id || '') + '\x1b[0m');
                 if (currentStep === 2) {
-                    term.writeln('\x1b[1;32mFound the flag in Splunk. Write a detection rule.\x1b[0m');
+                    term.writeln('\x1b[1;32mAttack trace located. Now write a detection rule.\x1b[0m');
                     currentStep = 3;
                     updateTasks(currentStep);
                     document.getElementById('submit-report-btn').disabled = false;
                 }
-                term.write('\x1b[1;36m$ \x1b[0m');
+                prompt_();
                 return;
             }
 
-            if (cmd === 'help') {
-                term.writeln('\x1b[2;37mCommands: nmap, curl, cat, index=main, help, clear, next\x1b[0m');
-                term.write('\x1b[1;36m$ \x1b[0m');
-                return;
+            if (lowerCmd.startsWith('curl')) {
+                runCurl(cmd);
+                return;   // prompt is written when the response arrives
             }
-            if (cmd === 'clear') { term.clear(); term.write('\x1b[1;36m$ \x1b[0m'); return; }
 
             failedAttempts++;
-            term.writeln('\x1b[2;37mCommand not recognized. Try: nmap, curl, cat, index=main, help, clear, next\x1b[0m');
-            term.write('\x1b[1;36m$ \x1b[0m');
+            term.writeln('\x1b[2;37mCommand not recognized. Type "help" for the command list.\x1b[0m');
+            if (failedAttempts >= 4 && !hintTriggered) {
+                hintTriggered = true;
+                fetchAIHint('failure', failedAttempts);
+            }
+            prompt_();
+        }
+
+        function extractPath(cmd) {
+            // strip the command word, drop quotes and simple flags, keep the URL/path
+            let arg = cmd.replace(/^\s*curl\s+/i, '').trim();
+            arg = arg.replace(/^-[A-Za-z]+\s+\S+\s*/g, '').trim();   // e.g. -X GET, -H "..."
+            arg = arg.replace(/^["']|["']$/g, '').trim();
+            if (!arg) return null;
+            if (/^https?:\/\//i.test(arg)) {
+                try { const u = new URL(arg); return u.pathname + (u.search || ''); }
+                catch (e) { return null; }
+            }
+            return arg.startsWith('/') ? arg : '/' + arg;
+        }
+
+        function runCurl(cmd) {
+            const path = extractPath(cmd);
+            if (!path) {
+                term.writeln('\x1b[2;37mUsage: curl "/endpoint?param=value"\x1b[0m');
+                prompt_();
+                return;
+            }
+
+            commandRunning = true;
+            currentTargetPath = path;
+            term.writeln('\x1b[2;37m> GET ' + path + '\x1b[0m');
+
+            const url = API_BASE + '/missions/' + currentMissionId +
+                        '/proxy?path=' + encodeURIComponent(path);
+
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        term.writeln('\x1b[1;31mcurl: ' + data.error + '\x1b[0m');
+                        failedAttempts++;
+                        return;
+                    }
+                    term.writeln('\x1b[2;37mHTTP ' + data.status + '\x1b[0m');
+
+                    const body = (data.body || '');
+                    // print the response, tags stripped so HTML doesn't drown the terminal
+                    body.replace(/<[^>]+>/g, '')
+                        .split('\n')
+                        .map(l => l.trim())
+                        .filter(Boolean)
+                        .slice(0, 25)
+                        .forEach(l => term.writeln('\x1b[2;37m' + l + '\x1b[0m'));
+
+                    // the ONLY success condition: the real target returned the real flag
+                    if (body.includes('FLAG-FOUND')) {
+                        failedAttempts = 0;
+                        captureFlag(path);
+                    } else if (/root:x:0:0/.test(body)) {
+                        term.writeln('\x1b[1;33mYou read a system file — the traversal works. ' +
+                                    'Now aim it at the application\'s own secret file.\x1b[0m');
+                        failedAttempts = 0;
+                    } else {
+                        failedAttempts++;
+                        if (failedAttempts >= 4 && !hintTriggered) {
+                            hintTriggered = true;
+                            fetchAIHint('failure', failedAttempts);
+                        }
+                    }
+                })
+                .catch(err => {
+                    term.writeln('\x1b[1;31mcurl failed: ' + err.message + '\x1b[0m');
+                })
+                .finally(() => {
+                    commandRunning = false;
+                    prompt_();
+                });
         }
 
         function sendCommand(cmd) {
@@ -1339,89 +1410,110 @@
                 });
         }
 
+        let missionStarting = false;
+
+        let missionES = null;
+
         function enterMission() {
+            if (missionStarting) return;
+            missionStarting = true;
             closeModal();
             document.getElementById('view-dashboard').style.display = 'none';
             document.getElementById('tab-bar').style.display = 'none';
             document.getElementById('view-loading').style.display = 'flex';
-            document.getElementById('loading-cve-title').textContent = currentMissionId ? ('mission #' + currentMissionId) : '...';
-            document.getElementById('loading-log').textContent = 'Contacting backend...';
+            document.getElementById('loading-cve-title').textContent =
+                currentMissionData?.cve_id || ('mission #' + currentMissionId);
 
-            fetch(API_BASE + '/missions/' + currentMissionId + '/start', { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.error) {
-                        alert('Failed to start mission: ' + data.error);
-                        document.getElementById('view-loading').style.display = 'none';
-                        exitMission();
-                        return;
-                    }
-                    currentMissionData = data;
-                    document.getElementById('loading-log').textContent = (data.build_log || []).join('\n');
+            const log = document.getElementById('loading-log');
+            log.textContent = 'Connecting to backend…';
+            const started = Date.now();
+            const lines = [];
 
+            function append(msg) {
+                const t = Math.round((Date.now() - started) / 1000);
+                lines.push(`[${String(t).padStart(3)}s] ${msg}`);
+                log.textContent = lines.slice(-14).join('\n');
+            }
+
+            missionES = new EventSource(API_BASE + '/missions/' + currentMissionId + '/start_stream');
+
+            missionES.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.stage === 'done') {
+                    missionES.close(); missionES = null; missionStarting = false;
+                    append('Environment ready.');
+                    setTimeout(() => enterMissionView(msg.result), 400);
+                    return;
+                }
+                if (msg.stage === 'error') {
+                    missionES.close(); missionES = null; missionStarting = false;
+                    append('ERROR: ' + msg.message);
                     document.getElementById('view-loading').style.display = 'none';
-                    isMissionActive = true;
-                    document.getElementById('view-mission').classList.add('active');
-                    document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
-                    currentStep = 0;
-                    updateTasks(currentStep);
-
-                    fetch(API_BASE + '/missions/' + currentMissionId + '/start', { method: 'POST' })
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.error) {
-                                alert('Failed to start mission: ' + data.error);
-                                exitMission();
-                                return;
-                            }
-                            currentMissionData = data;
-                            document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
-                            seconds = 0;
-                            if (timerInterval) clearInterval(timerInterval);
-                            timerInterval = setInterval(function() {
-                                seconds++;
-                                var mins = String(Math.floor(seconds / 60)).padStart(2, '0');
-                                var secs = String(seconds % 60).padStart(2, '0');
-                                document.getElementById('mission-timer').textContent = mins + ':' + secs;
-                            }, 1000);
-                            flagCaptured = false;
-                            document.getElementById('submit-report-btn').disabled = true;
-                            document.getElementById('blue-team-section').classList.remove('active');
-                            document.getElementById('rule-result').textContent = '';
-                            document.getElementById('rule-input').value = '';
-                            document.getElementById('wtab-splunk').classList.add('disabled');
-                            lastCommandTime = Date.now();
-                            failedAttempts = 0;
-                            lastCommands = [];
-                            hintTriggered = false;
-                            document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Click "Get Hint" if you\'re stuck.';
-                            if (term) {
-                                term.clear();
-                                term.write('\x1b[1;36m$ \x1b[0m');
-                                currentInput = '';
-                                cursorPosition = 0;
-                                commandHistory = [];
-                                historyIndex = 0;
-                            }
-                            if (currentMissionData.app_url) {
-                                const iframeContainer = document.querySelector('#target-container .iframe-container');
-                                if (currentMissionData.target_ready) {
-                                    iframeContainer.innerHTML = '<iframe id="app-iframe" src="' + currentMissionData.app_url + '"></iframe>';
-                                } else {
-                                    iframeContainer.innerHTML = '<div style="padding:20px;color:#94a3b8;">Target environment is still starting — try the Target tab again in a few seconds.</div>';
-                                    setTimeout(() => {
-                                        iframeContainer.innerHTML = '<iframe id="app-iframe" src="' + currentMissionData.app_url + '"></iframe>';
-                                    }, 5000);
-                                }
-                            }
-                            switchWorkspace('terminal');
-                        })
-                })
-                .catch(err => {
-                    alert('Failed to start mission: ' + err.message);
-                    document.getElementById('view-loading').style.display = 'none';
+                    alert('Failed to start mission: ' + msg.message);
                     exitMission();
-                });
+                    return;
+                }
+                // 'waiting' overwrites its own line instead of spamming
+                if (msg.stage === 'waiting' && lines.length && lines[lines.length-1].includes('Waiting for target')) {
+                    lines.pop();
+                }
+                append(msg.message);
+            };
+
+            missionES.onerror = () => {
+                if (!missionES) return;
+                missionES.close(); missionES = null; missionStarting = false;
+                append('Connection to backend lost.');
+            };
+        }
+
+        function enterMissionView(data) {
+            currentMissionData = data;
+            document.getElementById('view-loading').style.display = 'none';
+            isMissionActive = true;
+            document.getElementById('view-mission').classList.add('active');
+            document.getElementById('mission-title').textContent = data.cve_id || 'Mission';
+            document.getElementById('help-brief').textContent = data.red_team_brief || '';
+
+            currentStep = 0;
+            updateTasks(currentStep);
+            seconds = 0;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                seconds++;
+                document.getElementById('mission-timer').textContent =
+                    String(Math.floor(seconds/60)).padStart(2,'0') + ':' + String(seconds%60).padStart(2,'0');
+            }, 1000);
+
+            flagCaptured = false;
+            document.getElementById('submit-report-btn').disabled = true;
+            document.getElementById('blue-team-section').classList.remove('active');
+            document.getElementById('rule-result').textContent = '';
+            document.getElementById('rule-input').value = '';
+            document.getElementById('wtab-splunk').classList.add('disabled');
+            lastCommandTime = Date.now();
+            failedAttempts = 0;
+            lastCommands = [];
+            hintTriggered = false;
+            document.getElementById('help-hint').innerHTML =
+                '<span class="hint-icon">◆</span> Click "Get Hint" if you\'re stuck.';
+
+            if (term) {
+                term.clear(); term.write('\x1b[1;36m$ \x1b[0m');
+                currentInput = ''; cursorPosition = 0; commandHistory = []; historyIndex = 0;
+            }
+
+            if (data.app_url) {
+                const c = document.querySelector('#target-container .iframe-container');
+                const mount = () => c.innerHTML = '<iframe id="app-iframe" src="' + data.app_url + '"></iframe>';
+                if (data.target_ready) mount();
+                else {
+                    c.innerHTML = '<div style="padding:20px;color:#94a3b8;">Target still starting…</div>';
+                    setTimeout(mount, 5000);
+                }
+            }
+            switchWorkspace('terminal');
+            startIdleCheck();   // you defined this but never called it
         }
 
         function updateTasks(step) {
@@ -1479,20 +1571,51 @@
             }
         }
 
-        function captureFlag() {
+        let successfulPayload = null;
+
+        function captureFlag(payloadPath) {
             if (flagCaptured) return;
             flagCaptured = true;
-            term.writeln('\x1b[1;32mFLAG CAPTURED! Red Team phase complete.\x1b[0m');
-            term.writeln('\x1b[1;33mBlue Team phase is now available. Click "Skip Step" or type "next" to begin.\x1b[0m');
-            document.getElementById('submit-report-btn').disabled = false;
+            successfulPayload = payloadPath || currentTargetPath || null;
+
+            term.writeln('');
+            term.writeln('\x1b[1;32m╔══════════════════════════════════════════╗\x1b[0m');
+            term.writeln('\x1b[1;32m║  FLAG CAPTURED — Red Team phase complete ║\x1b[0m');
+            term.writeln('\x1b[1;32m╚══════════════════════════════════════════╝\x1b[0m');
+            if (successfulPayload) {
+                term.writeln('\x1b[2;37mWinning request: GET ' + successfulPayload + '\x1b[0m');
+                term.writeln('\x1b[2;37mNote it down — you\'ll need it for your detection rule.\x1b[0m');
+            }
+            term.writeln('\x1b[1;33mBlue Team phase unlocked. Investigate the logs in the Splunk tab.\x1b[0m');
+            term.writeln('\x1b[2;37mTry: index=cyber_range mission-' + currentMissionId + '\x1b[0m');
+
             document.getElementById('wtab-splunk').classList.remove('disabled');
+            document.getElementById('submit-report-btn').disabled = false;
+
             var blueSection = document.getElementById('blue-team-section');
             blueSection.classList.add('active');
-            var blueBriefText = currentMissionData.blue_team_brief || 'Your mission is to investigate the logs from the attack in Splunk. You must locate the attack traces and write a detection rule to prevent future exploitation.';
+            var blueBriefText = currentMissionData?.blue_team_brief ||
+                'Investigate the attack traces in the Splunk logs and write a detection rule to prevent future exploitation.';
             document.getElementById('blue-brief-text').textContent = blueBriefText;
+            document.getElementById('help-brief').textContent = 'Blue Team Phase: ' + blueBriefText;
+
+            if (successfulPayload) {
+                var input = document.getElementById('rule-input');
+                if (input && !input.value.trim()) {
+                    input.placeholder = 'Write a rule that would have caught: ' + successfulPayload;
+                }
+            }
+
             currentStep = 2;
             updateTasks(currentStep);
-            document.getElementById('help-hint').innerHTML = 'Red Team complete. Begin Blue Team investigation when ready.';
+
+            document.getElementById('help-hint').innerHTML =
+                '<span class="hint-icon">◆</span> Red Team complete. Find your attack in Splunk, then write a detection rule.';
+
+            // give them a beat to read the terminal before the tab flips
+            setTimeout(function () {
+                if (isMissionActive && !flagCaptured === false) switchWorkspace('splunk');
+            }, 2500);
         }
 
         function submitRule() {
@@ -1631,6 +1754,9 @@
 
         function exitMission() {
             isMissionActive = false;
+            missionStarting = false;
+            successfulPayload = null;
+            if (missionES) { missionES.close(); missionES = null; }
             if (idleCheckInterval) clearInterval(idleCheckInterval);
             if (timerInterval) clearInterval(timerInterval);
             document.getElementById('view-mission').classList.remove('active');

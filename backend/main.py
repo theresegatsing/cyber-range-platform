@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 import docker
 import requests
 import os
@@ -13,6 +13,8 @@ from database import get_archived_vulnerabilities
 from ai_helper import generate_mission_brief, generate_blue_team_brief, generate_hint, grade_report, score_cve_interestingness, generate_command_suggestion
 from docker.types import LogConfig
 from container_builder import build_cve_image
+import json, queue, threading
+
 
 # Load environment variables
 load_dotenv()
@@ -43,8 +45,12 @@ def find_free_port(start_port=8080, max_attempts=100):
             return port
     return None
 
-def wait_for_container_ready(port: int, timeout: int = 15) -> bool:
-    """Poll the target's HTTP endpoint until it responds or timeout is hit."""
+
+
+_in_flight = set()   # guards against double-launch server-side
+_in_flight_lock = threading.Lock()
+
+def wait_for_container_ready(port: int, timeout: int = 20, emit=None) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -53,9 +59,144 @@ def wait_for_container_ready(port: int, timeout: int = 15) -> bool:
                 return True
         except requests.exceptions.RequestException:
             pass
+        if emit:
+            emit("waiting", f"Waiting for target… {int(deadline - time.time())}s left")
         time.sleep(0.5)
     return False
 
+
+def _run_mission_start(vulnerability_id: int, emit):
+    conn = get_platform_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("SELECT * FROM platform_vulnerabilities WHERE id = %s", (vulnerability_id,))
+    vuln = cursor.fetchone()
+    if not vuln:
+        conn.close()
+        raise ValueError("Vulnerability not found")
+
+    cached = BRIEF_CACHE.get(vulnerability_id)
+    if cached:
+        red_brief, blue_brief = cached["red"], cached["blue"]
+    else:
+        emit("briefs", f"Generating AI briefs for {vuln['cve_id']}…")
+        red_brief = generate_mission_brief(vuln['cve_id'], vuln['description'],
+                                           vuln['cvss_score'], vuln['asset'])
+        blue_brief = generate_blue_team_brief(vuln['cve_id'], vuln['description'])
+        BRIEF_CACHE[vulnerability_id] = {"red": red_brief, "blue": blue_brief}
+
+    free_port = find_free_port()
+    if not free_port:
+        conn.close()
+        raise RuntimeError("No free ports available")
+
+    container_name = f"mission-{vulnerability_id}"
+    try:
+        existing = docker_client.containers.get(container_name)
+        emit("cleanup", f"Removing previous container {container_name}…")
+        existing.stop()
+        existing.remove()
+    except docker.errors.NotFound:
+        pass
+
+    emit("image", f"Resolving vulnerable environment for {vuln['cve_id']}…")
+    image_tag, pattern = build_cve_image(docker_client, vuln['cve_id'],
+                                         vuln['description'], emit=emit)
+    emit("image", f"Using image {image_tag} (pattern: {pattern})")
+
+    log_config = LogConfig(
+        driver="splunk",
+        options={
+            "splunk-token": "bb056fbe-a182-4ff6-8612-803df97d6d24",
+            "splunk-url": "https://172.16.25.2:8088",
+            "splunk-insecureskipverify": "true",
+            "splunk-sourcetype": "docker",
+            "splunk-index": "cyber_range",
+            "splunk-verify-connection": "false",
+            "mode": "non-blocking",
+            "max-buffer-size": "2m",
+            "tag": f"mission-{vulnerability_id}"
+        }
+    )
+    host_config = docker_client.api.create_host_config(
+        port_bindings={80: free_port}, log_config=log_config)
+
+    emit("container", f"Starting container on port {free_port}…")
+    container_id = docker_client.api.create_container(
+        image=image_tag, host_config=host_config, name=container_name, detach=True)
+    docker_client.api.start(container=container_id)
+
+    target_ready = wait_for_container_ready(free_port, emit=emit)
+
+    if vuln['platform_status'] == 'pending':
+        cursor.execute("UPDATE platform_vulnerabilities SET platform_status='active' WHERE id=%s",
+                       (vulnerability_id,))
+    cursor.execute("""
+        INSERT INTO missions (vulnerability_id, cve_id, red_team_brief, blue_team_brief, status, created_at)
+        VALUES (%s, %s, %s, %s, 'active', %s)
+    """, (vulnerability_id, vuln['cve_id'], red_brief, blue_brief, datetime.now()))
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "success",
+        "cve_id": vuln['cve_id'],
+        "description": vuln['description'],
+        "red_team_brief": red_brief,
+        "blue_team_brief": blue_brief,
+        "container_name": container_name,
+        "container_port": free_port,
+        "app_url": f"http://localhost:{free_port}",
+        "target_ready": target_ready,
+        "pattern": pattern,
+    }
+
+
+@app.get("/missions/{vulnerability_id}/start_stream")
+def start_mission_stream(vulnerability_id: int):
+    q = queue.Queue()
+
+    def emit(stage, message, **extra):
+        q.put({"stage": stage, "message": message, **extra})
+
+    def work():
+        # claim this mission id atomically
+        with _in_flight_lock:
+            if vulnerability_id in _in_flight:
+                q.put({"stage": "error", "message": "This mission is already starting."})
+                q.put(None)
+                return
+            _in_flight.add(vulnerability_id)
+
+        try:
+            result = _run_mission_start(vulnerability_id, emit)
+            q.put({"stage": "done", "message": "Environment ready", "result": result})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            q.put({"stage": "error", "message": str(e)})
+        finally:
+            with _in_flight_lock:
+                _in_flight.discard(vulnerability_id)
+            q.put(None)
+
+    threading.Thread(target=work, daemon=True).start()
+
+    def stream():
+        while True:
+            try:
+                item = q.get(timeout=1.0)
+            except queue.Empty:
+                yield ": keepalive\n\n"
+                continue
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 # ============================================================
 # SERVE FRONTEND
 # ============================================================
@@ -150,10 +291,9 @@ def get_blue_team_brief(cve_id: str, description: str):
     return {"brief": blue_brief}
 
 @app.get("/ai/hint")
-def get_hint(task_name: str, current_step: str, actions: str = ""):
+def get_hint(task_name: str, current_step: str, actions: str = "", cve_description: str = ""):
     action_list = actions.split(",") if actions else []
-    hint = generate_hint(task_name, current_step, action_list)
-    return {"hint": hint}
+    return {"hint": generate_hint(task_name, current_step, action_list, cve_description)}
 
 @app.post("/ai/grade")
 def grade_learner_report(report: str, findings: list):
@@ -215,6 +355,7 @@ def list_archived_vulnerabilities(min_score: int = 5):
     except Exception as e:
         return {"error": str(e)}
 
+BRIEF_CACHE = {}
 @app.get("/missions/{vulnerability_id}/preview")
 def preview_mission(vulnerability_id: int):
     """Generate briefs for the modal WITHOUT touching platform_status or spinning up a container."""
@@ -229,6 +370,7 @@ def preview_mission(vulnerability_id: int):
 
         red_brief = generate_mission_brief(vuln['cve_id'], vuln['description'], vuln['cvss_score'], vuln['asset'])
         blue_brief = generate_blue_team_brief(vuln['cve_id'], vuln['description'])
+        BRIEF_CACHE[vulnerability_id] = {"red": red_brief, "blue": blue_brief}
         return {
             "cve_id": vuln['cve_id'],
             "red_team_brief": red_brief,
@@ -277,7 +419,12 @@ def start_mission(vulnerability_id: int):
                 pass
 
             log(f"🏗️  Resolving vulnerable environment for {vuln['cve_id']}...")
-            image_tag, pattern = build_cve_image(docker_client, vuln['cve_id'], vuln['description'])
+
+            result = build_cve_image(docker_client, vuln['cve_id'], vuln['description'])
+            if isinstance(result, tuple) and len(result) == 2:
+                image_tag, pattern = result
+            else:
+                image_tag, pattern = result, "unknown"
             log(f"   Using image: {image_tag} (pattern: {pattern})")
 
             log_config = LogConfig(
@@ -344,6 +491,23 @@ def start_mission(vulnerability_id: int):
             conn.close()
             return {"error": f"Container error: {str(e)}", "build_log": build_log}
 
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/missions/{vulnerability_id}/proxy")
+def proxy_target(vulnerability_id: int, path: str = "/"):
+    """Relay a request to this mission's container so the terminal can hit it for real."""
+    try:
+        container = docker_client.containers.get(f"mission-{vulnerability_id}")
+        port = container.attrs["NetworkSettings"]["Ports"]["80/tcp"][0]["HostPort"]
+    except Exception as e:
+        return {"error": f"Target container not reachable: {e}"}
+
+    if not path.startswith("/"):
+        path = "/" + path
+    try:
+        r = requests.get(f"http://localhost:{port}{path}", timeout=8)
+        return {"status": r.status_code, "body": r.text[:6000]}
     except Exception as e:
         return {"error": str(e)}
 # ============================================================

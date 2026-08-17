@@ -5,18 +5,25 @@ import json
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "phi3:mini"
 
-def query_ollama(prompt: str) -> str:
+def query_ollama(prompt: str, timeout: int = 120) -> str:
     try:
         response = requests.post(
             OLLAMA_URL,
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
-                "stream": False
-            }
+                "stream": False,
+                "keep_alive": "30m",
+                "options": {"num_predict": 220, "temperature": 0.7}
+            },
+            timeout=timeout
         )
         response.raise_for_status()
         return response.json().get("response", "")
+
+    except requests.exceptions.Timeout:
+        return "Error: brief generation timed out."
+
     except Exception as e:
         return f"Error: Could not reach Ollama. Make sure it's running. Details: {str(e)}"
 
@@ -255,26 +262,146 @@ Category:
 
 
 
-#-----
-# generate_template_params
-#----
+
+import re
+
+# Each pattern declares the keys its template needs, plus safe fallbacks.
+PATTERN_SCHEMAS = {
+    "path_traversal": {
+        "keys": {
+            "app_title":    "Document Viewer Lab",
+            "asset_name":   "the file service",
+            "endpoint":     "vuln",
+            "param_name":   "file",
+            "public_file":  "readme.txt",
+            "secret_file":  "secret.txt",
+        },
+        "hint": ("endpoint = the vulnerable route name from the CVE (no slash). "
+                 "param_name = the exact query/argument name the CVE says is manipulated. "
+                 "public_file = a harmless document name. "
+                 "secret_file = a plausible confidential filename the attacker would target."),
+    },
+    "sql_injection": {
+        "keys": {
+            "app_title":    "Vulnerable App",
+            "asset_name":   "the application",
+            "endpoint":     "vuln",
+            "param_name":   "id",
+            "table_name":   "users",
+            "column_names": ["id", "username", "secret"],
+            "sample_row_1": "1, admin, secretpass",
+            "sample_row_2": "2, john, doe123",
+        },
+        "hint": ("table_name and column_names should reflect the data the CVE exposes. "
+                 "param_name = the injectable parameter named in the CVE."),
+    },
+    "command_injection": {
+        "keys": {
+            "app_title":  "Diagnostics Console",
+            "asset_name": "the admin utility",
+            "endpoint":   "vuln",
+            "param_name": "host",
+            "base_command": "ping -c 1",
+        },
+        "hint": "base_command = the shell command the app legitimately runs with user input appended.",
+    },
+    "reflected_xss": {
+        "keys": {
+            "app_title":  "Search Portal",
+            "asset_name": "the web interface",
+            "endpoint":   "vuln",
+            "param_name": "q",
+        },
+        "hint": "param_name = the parameter reflected unsanitized into the response.",
+    },
+}
+
+IDENT_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
+FILE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$')
+
+
+def _clean_text(v, fallback, maxlen=60):
+    if not isinstance(v, str):
+        return fallback
+    v = v.replace("{", "").replace("}", "").replace('"', "'").strip()
+    v = " ".join(v.split())
+    return v[:maxlen] if v else fallback
+
+
+def _sanitize(pattern: str, params: dict) -> dict:
+    """Values are injected into generated Python source — they must be tightly constrained."""
+    schema = PATTERN_SCHEMAS[pattern]["keys"]
+    out = {}
+    for key, default in schema.items():
+        val = params.get(key)
+
+        if key == "column_names":
+            if isinstance(val, str):
+                val = [c.strip() for c in val.split(",")]
+            if not isinstance(val, list) or not val:
+                val = default
+            val = [c for c in (str(c).strip() for c in val) if IDENT_RE.match(c)]
+            out[key] = val or default
+
+        elif key in ("endpoint", "param_name", "table_name"):
+            v = str(val).strip().strip('/') if val else ""
+            out[key] = v if IDENT_RE.match(v) else default
+
+        elif key in ("public_file", "secret_file"):
+            v = str(val).strip().lstrip('./') if val else ""
+            out[key] = v if FILE_RE.match(v) else default
+
+        else:
+            out[key] = _clean_text(val, default)
+
+    return out
+
+
 def generate_template_params(pattern: str, cve_id: str, description: str) -> dict:
-    """Fill CVE-specific flavor text into a template (table names, error strings, etc)."""
+    """Fill CVE-specific flavor into a pattern's template. Never raises."""
+    if pattern not in PATTERN_SCHEMAS:
+        return {}
+
+    schema = PATTERN_SCHEMAS[pattern]
+    example = json.dumps({k: (v if not isinstance(v, list) else v) for k, v in schema["keys"].items()})
+
     prompt = f"""
-You are customizing a {pattern} training lab to match a specific CVE.
+You are customizing a {pattern} training lab so it mirrors a specific real CVE.
 
 CVE: {cve_id}
 Description: {description}
 
-Return ONLY JSON with these exact keys (invent realistic, CVE-appropriate values):
-{{"table_name": "...", "column_names": ["...", "..."], "app_title": "...", "sample_row_1": "...", "sample_row_2": "..."}}
+Return ONLY a JSON object with exactly these keys, no prose, no markdown fences:
+{example}
+
+Guidance: {schema["hint"]}
+
+Rules:
+- Draw names DIRECTLY from the CVE description wherever it names an endpoint,
+  parameter, table, column, or file. If the description names a parameter, use it verbatim.
+- endpoint, param_name and table_name must be single words: letters, digits, underscores only.
+- public_file and secret_file must be plain filenames like "notes.txt" — no slashes, no dots-dot.
+- app_title should read like a real product screen, under 50 characters.
+- Invent plausible values only for what the description does not specify.
+
+JSON:
 """
-    response = query_ollama(prompt)
+    raw = query_ollama(prompt)
+    parsed = {}
     try:
-        return json.loads(response)
+        # models love wrapping JSON in fences or chatter — grab the first object
+        m = re.search(r'\{.*\}', raw, re.S)
+        if m:
+            parsed = json.loads(m.group(0))
     except Exception:
-        return {
-            "table_name": "users", "column_names": ["id", "username", "secret"],
-            "app_title": f"{cve_id} Training Lab",
-            "sample_row_1": "1, admin, secretpass", "sample_row_2": "2, john, doe123"
-        }
+        parsed = {}
+    if not isinstance(parsed, dict):
+        parsed = {}
+
+    params = _sanitize(pattern, parsed)
+    params["cve_id"] = cve_id
+    params["flag_message"] = (
+        f"FLAG-FOUND: {cve_id} — you escaped {PATTERN_SCHEMAS[pattern]['keys'].get('app_title')} "
+        f"and read a protected file."
+    ) if pattern == "path_traversal" else f"FLAG-FOUND: {cve_id} exploited successfully."
+    return params

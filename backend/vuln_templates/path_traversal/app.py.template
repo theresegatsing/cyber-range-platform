@@ -2,27 +2,53 @@ from flask import Flask, request
 import os
 
 app = Flask(__name__)
-SECRET_CONTENT = "FLAG-FOUND: {app_title} — you escaped the sandbox and read a protected file."
+
+PUBLIC_DIR = "/app/files"
+SECRET_PATH = "/app/{secret_file}"
+FLAG = "{flag_message}"
+
+
+def _seed():
+    """Runs at import time so the lab is exploitable before any page is visited."""
+    os.makedirs(PUBLIC_DIR, exist_ok=True)
+    public = os.path.join(PUBLIC_DIR, "{public_file}")
+    if not os.path.exists(public):
+        with open(public, "w") as f:
+            f.write("This is a normal public file, served from " + PUBLIC_DIR + ".\n")
+    if not os.path.exists(SECRET_PATH):
+        with open(SECRET_PATH, "w") as f:
+            f.write(FLAG + "\n")
+
+
+_seed()
+
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name} &mdash; public documents are served from <code>/app/files</code>.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="{public_file}" size="40">
+  <button>View file</button>
+</form>
+"""
+
 
 @app.route('/')
 def home():
-    os.makedirs('/app/files', exist_ok=True)
-    with open('/app/files/readme.txt', 'w') as f:
-        f.write("This is a normal public file.")
-    with open('/app/secret.txt', 'w') as f:
-        f.write(SECRET_CONTENT)
-    return '<h3>{app_title}</h3><form action="/vuln"><input name="file" value="readme.txt"><button>View file</button></form>'
+    return PAGE
 
-@app.route('/vuln')
+
+@app.route('/{endpoint}')
 def vuln():
-    filename = request.args.get('file', 'readme.txt')
+    filename = request.args.get('{param_name}', '{public_file}')
     try:
-        # intentionally vulnerable — no path sanitization
-        path = os.path.join('/app/files', filename)
+        # intentionally vulnerable — no path sanitization, no basename(), no realpath check
+        path = os.path.join(PUBLIC_DIR, filename)
         with open(path, 'r') as f:
-            return f"<pre>{{f.read()}}</pre>"
+            body = f.read()
+        return f"<pre>{{body}}</pre><hr><a href='/'>&larr; Back</a>"
     except Exception as e:
-        return f"Error: {{e}}"
+        return f"<pre>Error: {{e}}</pre><hr><a href='/'>&larr; Back</a>"
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80)
