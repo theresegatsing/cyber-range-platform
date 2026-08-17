@@ -74,14 +74,20 @@ def build_cve_image(docker_client, cve_id: str, description: str, emit=None):
 
     tag = get_image_tag(cve_id)
 
-    # ---- 1. cached image? ----
+    # ---- 1. cached image, but only if it came from the current template ----
     try:
         image = docker_client.images.get(tag)
-        cached_pattern = (image.labels or {}).get(LABEL_KEY)
-        if cached_pattern:
+        labels = image.labels or {}
+        cached_pattern = labels.get(LABEL_KEY)
+        cached_fp = labels.get(FINGERPRINT_KEY)
+        if cached_pattern and cached_fp == _template_fingerprint(cached_pattern):
             log("image", f"Cached image found ({cached_pattern}) — skipping build")
             return tag, cached_pattern
-        log("image", "Cached image has no pattern label — rebuilding")
+        log("image", "Template changed since this image was built — rebuilding")
+        try:
+            docker_client.images.remove(tag, force=True)
+        except Exception as e:
+            log("image", f"Could not remove stale image: {e}")
     except Exception:
         log("image", "No cached image — building from template")
 
@@ -128,7 +134,7 @@ def build_cve_image(docker_client, cve_id: str, description: str, emit=None):
     try:
         for chunk in docker_client.api.build(
             path=build_path, tag=tag, rm=True,
-            labels={LABEL_KEY: pattern}, decode=True
+            labels={LABEL_KEY: pattern, FINGERPRINT_KEY: _template_fingerprint(pattern),}, decode=True
         ):
             if "stream" in chunk:
                 line = chunk["stream"].strip()
@@ -144,3 +150,24 @@ def build_cve_image(docker_client, cve_id: str, description: str, emit=None):
     docker_client.images.get(tag)
     log("build", f"Image {tag} ready")
     return tag, pattern
+
+
+import hashlib
+
+TEMPLATE_VERSION = "2"      # bump manually for a forced global rebuild
+FINGERPRINT_KEY = "cyber_range_fingerprint"
+
+
+def _template_fingerprint(pattern: str) -> str:
+    """Hash the template files so edits automatically invalidate cached images."""
+    h = hashlib.sha256()
+    h.update(TEMPLATE_VERSION.encode())
+    h.update(pattern.encode())
+    for name in ("app.py.template", "Dockerfile.template"):
+        path = os.path.join(_template_dir(pattern), name)
+        try:
+            with open(path, "rb") as f:
+                h.update(f.read())
+        except FileNotFoundError:
+            pass
+    return h.hexdigest()[:16]

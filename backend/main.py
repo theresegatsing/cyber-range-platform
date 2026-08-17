@@ -510,6 +510,55 @@ def proxy_target(vulnerability_id: int, path: str = "/"):
         return {"status": r.status_code, "body": r.text[:6000]}
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.post("/admin/purge_images")
+def purge_cve_images(include_containers: bool = True):
+    """Remove all generated CVE lab images (and optionally their containers)."""
+    removed_containers, removed_images, errors = [], [], []
+
+    if include_containers:
+        for c in docker_client.containers.list(all=True):
+            if c.name.startswith("mission-"):
+                try:
+                    c.remove(force=True)
+                    removed_containers.append(c.name)
+                except Exception as e:
+                    errors.append(f"{c.name}: {e}")
+
+    for img in docker_client.images.list():
+        tags = img.tags or []
+        if any(t.startswith("cve-vuln-") for t in tags):
+            try:
+                docker_client.images.remove(img.id, force=True)
+                removed_images.extend(tags)
+            except Exception as e:
+                errors.append(f"{tags}: {e}")
+
+    BRIEF_CACHE.clear()
+    return {
+        "removed_containers": removed_containers,
+        "removed_images": removed_images,
+        "errors": errors,
+    }
+
+
+@app.on_event("startup")
+def cleanup_stale_missions():
+    """Remove leftover mission containers from a previous backend run."""
+    if docker_client is None:
+        return
+    removed = []
+    for c in docker_client.containers.list(all=True):
+        if c.name.startswith("mission-"):
+            try:
+                c.remove(force=True)
+                removed.append(c.name)
+            except Exception as e:
+                print(f"⚠️  Could not remove {c.name}: {e}")
+    if removed:
+        print(f"🧹 Cleaned up {len(removed)} stale mission container(s): {', '.join(removed)}")
+        
 # ============================================================
 # ADMIN: RUN SCANNER IMPORT
 # ============================================================

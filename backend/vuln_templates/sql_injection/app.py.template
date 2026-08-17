@@ -1,44 +1,68 @@
+from flask import Flask, request
 import sqlite3
-from flask import Flask, request, redirect
 import os
 
 app = Flask(__name__)
-TABLE = "{table_name}"
-COLS = {column_names}
 
-def init_db():
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
-    c.execute(f"CREATE TABLE IF NOT EXISTS {{TABLE}} ({{', '.join(COLS)}})")
-    c.execute(f"DELETE FROM {{TABLE}}")
-    c.execute(f"INSERT INTO {{TABLE}} VALUES ({sample_row_1})")
-    c.execute(f"INSERT INTO {{TABLE}} VALUES ({sample_row_2})")
+DB = "/app/lab.db"
+TABLE = "{table_name}"
+COLUMNS = {column_names}
+ROWS = ["{sample_row_1}", "{sample_row_2}"]
+FLAG = "{flag_message}"
+
+
+def _seed():
+    if os.path.exists(DB):
+        os.remove(DB)
+    conn = sqlite3.connect(DB)
+    conn.execute("CREATE TABLE " + TABLE + " (" + ", ".join(c + " TEXT" for c in COLUMNS) + ")")
+    marks = ", ".join("?" for _ in COLUMNS)
+    for row in ROWS:
+        vals = [v.strip() for v in row.split(",")]
+        vals = (vals + [""] * len(COLUMNS))[:len(COLUMNS)]
+        conn.execute("INSERT INTO " + TABLE + " VALUES (" + marks + ")", vals)
     conn.commit()
     conn.close()
 
+
+_seed()
+
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name}. Look up a record from <code>{table_name}</code>.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="1" size="44">
+  <button>Look up</button>
+</form>
+"""
+
+
 @app.route('/')
 def home():
-    return redirect('/vuln?id=1')
+    return PAGE
 
-@app.route('/vuln')
+
+@app.route('/{endpoint}')
 def vuln():
-    user_id = request.args.get('id')
-    if user_id is None:
-        return redirect('/vuln?id=1')
+    value = request.args.get('{param_name}', '1')
+    key = COLUMNS[0]
+    # intentionally vulnerable — raw string concatenation, no parameter binding
+    query = "SELECT * FROM " + TABLE + " WHERE " + key + " = '" + value + "'"
     try:
-        conn = sqlite3.connect('database.db')
-        cursor = conn.cursor()
-        query = f"SELECT * FROM {{TABLE}} WHERE {{COLS[0]}} = {{user_id}}"  # intentionally vulnerable
-        cursor.execute(query)
-        data = cursor.fetchall()
+        conn = sqlite3.connect(DB)
+        rows = conn.execute(query).fetchall()
         conn.close()
-        if len(data) >= 2:
-            return f"FLAG-FOUND: You retrieved {{len(data)}} rows from {{TABLE}}! Data: {{data}}"
-        return str(data)
     except Exception as e:
-        return f"SQL Error: {{e}}"
+        return f"<pre>SQL error: {{e}}\nQuery: {{query}}</pre><hr><a href='/'>&larr; Back</a>"
+
+    out = "<pre>Query: " + query + "\n\n"
+    for r in rows:
+        out += str(r) + "\n"
+    out += "\n" + str(len(rows)) + " row(s) returned\n"
+    if len(rows) > 1:
+        out += "\n" + FLAG + "\n"
+    return out + "</pre><hr><a href='/'>&larr; Back</a>"
+
 
 if __name__ == '__main__':
-    if not os.path.exists('database.db'):
-        init_db()
     app.run(host='0.0.0.0', port=80)

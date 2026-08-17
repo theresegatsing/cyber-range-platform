@@ -1,14 +1,26 @@
 from flask import Flask
+
 app = Flask(__name__)
 
+PAGE = """
+<div style="font-family:system-ui;max-width:680px;margin:40px auto;line-height:1.6">
+  <h3>{cve_id}</h3>
+  <p style="color:#b45309;background:#fffbeb;padding:12px;border-left:4px solid #f59e0b">
+    No exploitable lab exists for this vulnerability class yet. This mission is
+    read-only: study the description, then write your detection and remediation
+    recommendations in the report.
+  </p>
+  <h4>Description</h4>
+  <p style="color:#334155">{description}</p>
+</div>
+"""
+
+
 @app.route('/')
-def home():
-    return """
-    <h3>No training environment available yet</h3>
-    <p>CVE: {cve_id}</p>
-    <p>This vulnerability's exploitation mechanism isn't covered by any
-    available training template yet. Ask an admin to add support for it.</p>
-    """
+@app.route('/<path:_ignored>')
+def home(_ignored=None):
+    return PAGE
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80)

@@ -1,16 +1,36 @@
 from flask import Flask, request
+
 app = Flask(__name__)
+
+FLAG = "{flag_message}"
+PAYLOAD_MARKERS = ["<script", "onerror=", "onload=", "javascript:", "<img", "<svg"]
+
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name}.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="hello" size="44">
+  <button>Search</button>
+</form>
+"""
+
 
 @app.route('/')
 def home():
-    return '<h3>{app_title}</h3><form action="/vuln"><input name="q" placeholder="search..."><button>Search</button></form>'
+    return PAGE
 
-@app.route('/vuln')
+
+@app.route('/{endpoint}')
 def vuln():
-    query = request.args.get('q', '')
-    if '<script>' in query.lower():
-        return f"FLAG-FOUND: XSS payload reflected unsanitized! Rendered: {{query}}"
-    return f"<p>Search results for: {{query}}</p>"
+    value = request.args.get('{param_name}', '')
+    lowered = value.lower()
+    reflected = any(m in lowered for m in PAYLOAD_MARKERS)
+    # intentionally vulnerable — user input written straight into the response
+    body = "<h3>{app_title}</h3><p>Results for: " + value + "</p>"
+    if reflected:
+        body += "<pre>" + FLAG + "</pre>"
+    return body + "<hr><a href='/'>&larr; Back</a>"
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80)

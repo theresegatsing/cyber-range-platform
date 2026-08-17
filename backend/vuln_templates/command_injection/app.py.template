@@ -4,24 +4,48 @@ import os
 
 app = Flask(__name__)
 
+BASE_COMMAND = "{base_command}"
+FLAG = "{flag_message}"
+
+
+def _seed():
+    if not os.path.exists("/app/secret.txt"):
+        with open("/app/secret.txt", "w") as f:
+            f.write(FLAG + "\n")
+
+
+_seed()
+
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name}. Runs <code>{base_command} &lt;input&gt;</code> on the host.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="127.0.0.1" size="44">
+  <button>Run</button>
+</form>
+"""
+
+
 @app.route('/')
 def home():
-    return '<h3>{app_title}</h3><form action="/vuln"><input name="host" placeholder="host to ping"><button>Go</button></form>'
+    return PAGE
 
-@app.route('/vuln')
+
+@app.route('/{endpoint}')
 def vuln():
-    host = request.args.get('host', '')
-    if not host:
-        return "Provide a host to ping."
+    value = request.args.get('{param_name}', '127.0.0.1')
+    # intentionally vulnerable — shell=True with unsanitized user input appended
+    cmd = BASE_COMMAND + " " + value
     try:
-        # intentionally vulnerable — no sanitization of user input
-        result = subprocess.run(f"ping -c 1 {{host}}", shell=True, capture_output=True, text=True, timeout=5)
-        output = result.stdout + result.stderr
-        if ';' in host or '|' in host or '&&' in host:
-            return f"FLAG-FOUND: command injection succeeded! Output: {{output}}"
-        return f"<pre>{{output}}</pre>"
+        out = subprocess.run(cmd, shell=True, capture_output=True,
+                             text=True, timeout=8)
+        body = (out.stdout or "") + (out.stderr or "")
+    except subprocess.TimeoutExpired:
+        body = "Command timed out."
     except Exception as e:
-        return f"Error: {{e}}"
+        body = "Error: " + str(e)
+    return f"<pre>$ {{cmd}}\n\n{{body}}</pre><hr><a href='/'>&larr; Back</a>"
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80)

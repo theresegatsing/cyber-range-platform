@@ -398,10 +398,16 @@ JSON:
     if not isinstance(parsed, dict):
         parsed = {}
 
+    FLAG_TEXT = {
+        "path_traversal":    "you escaped the document directory and read a protected file",
+        "sql_injection":     "you bypassed the query filter and dumped the table",
+        "command_injection": "you chained a shell command through the input",
+        "reflected_xss":     "your payload was reflected unsanitized into the response",
+    }
+
     params = _sanitize(pattern, parsed)
     params["cve_id"] = cve_id
     params["flag_message"] = (
-        f"FLAG-FOUND: {cve_id} — you escaped {PATTERN_SCHEMAS[pattern]['keys'].get('app_title')} "
-        f"and read a protected file."
-    ) if pattern == "path_traversal" else f"FLAG-FOUND: {cve_id} exploited successfully."
+        f"FLAG-FOUND: {cve_id} — " + FLAG_TEXT.get(pattern, "exploited successfully") + "."
+    )
     return params

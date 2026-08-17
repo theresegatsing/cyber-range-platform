@@ -9,12 +9,11 @@ FLAG = "{flag_message}"
 
 
 def _seed():
-    """Runs at import time so the lab is exploitable before any page is visited."""
     os.makedirs(PUBLIC_DIR, exist_ok=True)
     public = os.path.join(PUBLIC_DIR, "{public_file}")
     if not os.path.exists(public):
         with open(public, "w") as f:
-            f.write("This is a normal public file, served from " + PUBLIC_DIR + ".\n")
+            f.write("This is a normal public document served from " + PUBLIC_DIR + ".\n")
     if not os.path.exists(SECRET_PATH):
         with open(SECRET_PATH, "w") as f:
             f.write(FLAG + "\n")
@@ -24,9 +23,9 @@ _seed()
 
 PAGE = """
 <h3>{app_title}</h3>
-<p style="color:#555">Asset: {asset_name} &mdash; public documents are served from <code>/app/files</code>.</p>
+<p style="color:#555">Asset: {asset_name}. Public documents live in <code>/app/files</code>.</p>
 <form action="/{endpoint}">
-  <input name="{param_name}" value="{public_file}" size="40">
+  <input name="{param_name}" value="{public_file}" size="44">
   <button>View file</button>
 </form>
 """
@@ -39,10 +38,10 @@ def home():
 
 @app.route('/{endpoint}')
 def vuln():
-    filename = request.args.get('{param_name}', '{public_file}')
+    value = request.args.get('{param_name}', '{public_file}')
     try:
-        # intentionally vulnerable — no path sanitization, no basename(), no realpath check
-        path = os.path.join(PUBLIC_DIR, filename)
+        # intentionally vulnerable — no basename(), no realpath containment check
+        path = os.path.join(PUBLIC_DIR, value)
         with open(path, 'r') as f:
             body = f.read()
         return f"<pre>{{body}}</pre><hr><a href='/'>&larr; Back</a>"
