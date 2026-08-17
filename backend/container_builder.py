@@ -17,27 +17,36 @@ def get_image_tag(cve_id: str) -> str:
     safe = re.sub(r'[^a-z0-9\-]', '-', cve_id.lower())
     return f"cve-vuln-{safe}"
 
-def build_cve_image(docker_client, cve_id: str, description: str) -> str:
-    """Returns the image tag, building it only if it doesn't already exist."""
+def build_cve_image(docker_client, cve_id: str, description: str):
+    """Returns (image_tag, pattern). Builds only if not already cached."""
     tag = get_image_tag(cve_id)
 
     try:
         docker_client.images.get(tag)
-        return tag  # already built — reuse
+        # already built — we still need to know which pattern it used,
+        # so store it in a sidecar label lookup instead of re-classifying.
+        image = docker_client.images.get(tag)
+        pattern = image.labels.get("cyber_range_pattern", "unknown")
+        return tag, pattern
     except Exception:
         pass
 
     pattern = classify_vulnerability_pattern(cve_id, description)
     template_path = os.path.join(TEMPLATES_DIR, pattern)
 
-    if not os.path.exists(os.path.join(template_path, "app.py.template")):
-        print(f"[WARN] No template for pattern '{pattern}', falling back to sql_injection")
-        pattern = "sql_injection"
-        template_path = os.path.join(TEMPLATES_DIR, pattern)
+    # genuine dev bug: classifier picked a real pattern name but its files are missing
+    if pattern != "unsupported" and not os.path.exists(os.path.join(template_path, "app.py.template")):
+        print(f"[WARN] Pattern '{pattern}' has no template files — treating as unsupported")
+        pattern = "unsupported"
+        template_path = os.path.join(TEMPLATES_DIR, "unsupported")
 
-    params = generate_template_params(pattern, cve_id, description)
-    for key, default in DEFAULT_PARAMS.items():
-        params.setdefault(key, default)
+    if pattern == "unsupported":
+        template_path = os.path.join(TEMPLATES_DIR, "unsupported")
+        params = {"cve_id": cve_id, "description": description[:300]}
+    else:
+        params = generate_template_params(pattern, cve_id, description)
+        for key, default in DEFAULT_PARAMS.items():
+            params.setdefault(key, default)
 
     build_path = os.path.join(BUILD_DIR, tag)
     os.makedirs(build_path, exist_ok=True)
@@ -53,5 +62,5 @@ def build_cve_image(docker_client, cve_id: str, description: str) -> str:
         f.write(dockerfile)
 
     print(f"[BUILD] Building image {tag} from pattern '{pattern}'...")
-    docker_client.images.build(path=build_path, tag=tag, rm=True)
-    return tag
+    docker_client.images.build(path=build_path, tag=tag, rm=True, labels={"cyber_range_pattern": pattern})
+    return tag, pattern

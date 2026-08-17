@@ -230,7 +230,7 @@ VULN_PATTERNS = ["sql_injection", "command_injection", "path_traversal", "reflec
 #------
 
 def classify_vulnerability_pattern(cve_id: str, description: str) -> str:
-    """Map a CVE to the closest supported vulnerability template class."""
+    """Map a CVE to the closest supported vulnerability template class, or 'unsupported' if none fit."""
     prompt = f"""
 You are classifying a CVE into ONE vulnerability category for a training simulator.
 
@@ -238,7 +238,12 @@ CVE: {cve_id}
 Description: {description}
 
 Choose exactly ONE from this list (respond with ONLY the exact string, nothing else):
-{', '.join(VULN_PATTERNS)}
+{', '.join(VULN_PATTERNS)}, unsupported
+
+Only pick one of the specific categories if the CVE's actual exploitation mechanism
+genuinely matches it. If the CVE is about something else entirely (auth bypass,
+deserialization, SSRF, race conditions, misconfiguration, etc. that doesn't match
+any category above), respond with exactly: unsupported
 
 Category:
 """
@@ -246,7 +251,7 @@ Category:
     for pattern in VULN_PATTERNS:
         if pattern in response:
             return pattern
-    return "sql_injection"  # safe fallback — never return an unsupported class
+    return "unsupported"
 
 
 

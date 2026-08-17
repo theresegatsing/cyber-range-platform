@@ -1,0 +1,16 @@
+from flask import Flask, request
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return '<h3>{app_title}</h3><form action="/vuln"><input name="q" placeholder="search..."><button>Search</button></form>'
+
+@app.route('/vuln')
+def vuln():
+    query = request.args.get('q', '')
+    if '<script>' in query.lower():
+        return f"FLAG-FOUND: XSS payload reflected unsanitized! Rendered: {{query}}"
+    return f"<p>Search results for: {{query}}</p>"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80)
