@@ -239,6 +239,11 @@ def preview_mission(vulnerability_id: int):
 
 @app.post("/missions/{vulnerability_id}/start")
 def start_mission(vulnerability_id: int):
+    build_log = []
+    def log(msg):
+        print(msg)
+        build_log.append(msg)
+
     try:
         conn = get_platform_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -250,13 +255,8 @@ def start_mission(vulnerability_id: int):
             conn.close()
             return {"error": "Vulnerability not found"}
 
-        print(f"🤖 Generating AI briefs for {vuln['cve_id']}...")
-        red_brief = generate_mission_brief(
-            vuln['cve_id'],
-            vuln['description'],
-            vuln['cvss_score'],
-            vuln['asset']
-        )
+        log(f"🤖 Generating AI briefs for {vuln['cve_id']}...")
+        red_brief = generate_mission_brief(vuln['cve_id'], vuln['description'], vuln['cvss_score'], vuln['asset'])
         blue_brief = generate_blue_team_brief(vuln['cve_id'], vuln['description'])
 
         free_port = find_free_port()
@@ -264,7 +264,7 @@ def start_mission(vulnerability_id: int):
             conn.close()
             return {"error": "No free ports available"}
 
-        print(f"🐳 Starting container on port {free_port}...")
+        log(f"🐳 Starting container on port {free_port}...")
         try:
             container_name = f"mission-{vulnerability_id}"
 
@@ -272,13 +272,13 @@ def start_mission(vulnerability_id: int):
                 existing = docker_client.containers.get(container_name)
                 existing.stop()
                 existing.remove()
-                print(f"Removed existing container: {container_name}")
+                log(f"Removed existing container: {container_name}")
             except docker.errors.NotFound:
                 pass
 
-            print(f"🏗️  Resolving vulnerable environment for {vuln['cve_id']}...")
-            image_tag = build_cve_image(docker_client, vuln['cve_id'], vuln['description'])
-            print(f"   Using image: {image_tag}")
+            log(f"🏗️  Resolving vulnerable environment for {vuln['cve_id']}...")
+            image_tag, pattern = build_cve_image(docker_client, vuln['cve_id'], vuln['description'])
+            log(f"   Using image: {image_tag} (pattern: {pattern})")
 
             log_config = LogConfig(
                 driver="splunk",
@@ -308,21 +308,16 @@ def start_mission(vulnerability_id: int):
             )
 
             docker_client.api.start(container=container_id)
+            log(f"Container {container_name} started on port {free_port} with Splunk logging")
 
-            container = docker_client.containers.get(container_name)
-            print(f"Container {container_name} started on port {free_port} with Splunk logging")
-
-            print("⏳ Waiting for target to become ready...")
+            log("⏳ Waiting for target to become ready...")
             target_ready = wait_for_container_ready(free_port)
-            print(f"   Target ready: {target_ready}")
+            log(f"   Target ready: {target_ready}")
 
             if vuln['platform_status'] == 'pending':
                 cursor.execute("""
-                    UPDATE platform_vulnerabilities
-                    SET platform_status = 'active'
-                    WHERE id = %s
+                    UPDATE platform_vulnerabilities SET platform_status = 'active' WHERE id = %s
                 """, (vulnerability_id,))
-            # if archived, leave it archived
 
             cursor.execute("""
                 INSERT INTO missions (vulnerability_id, cve_id, red_team_brief, blue_team_brief, status, created_at)
@@ -340,16 +335,17 @@ def start_mission(vulnerability_id: int):
                 "container_name": container_name,
                 "container_port": free_port,
                 "app_url": f"http://localhost:{free_port}",
-                "target_ready": target_ready
+                "target_ready": target_ready,
+                "pattern": pattern,          # <-- new: frontend needs this for terminal commands
+                "build_log": build_log
             }
 
         except Exception as e:
             conn.close()
-            return {"error": f"Container error: {str(e)}"}
+            return {"error": f"Container error: {str(e)}", "build_log": build_log}
 
     except Exception as e:
         return {"error": str(e)}
-
 # ============================================================
 # ADMIN: RUN SCANNER IMPORT
 # ============================================================

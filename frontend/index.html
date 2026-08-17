@@ -781,6 +781,17 @@
             </div>
         </div>
 
+        <!-- CONTAINER LOADING VIEW -->
+        <div class="view-mission" id="view-loading" style="display:none;">
+            <div class="mission-header">
+                <div class="title">Preparing: <span id="loading-cve-title">...</span></div>
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;">
+                <div style="font-size:14px; color:#64748b;">Building your environment...</div>
+                <pre id="loading-log" style="background:#1e293b; color:#e2e8f0; padding:20px; border-radius:8px; width:60%; min-height:160px; font-family:Consolas,monospace; font-size:12px; white-space:pre-wrap;">Waiting for backend...</pre>
+            </div>
+        </div>
+
         <!-- MISSION VIEW -->
         <div class="view-mission" id="view-mission">
             <div class="mission-header">
@@ -1322,66 +1333,85 @@
 
         function enterMission() {
             closeModal();
-            isMissionActive = true;
             document.getElementById('view-dashboard').style.display = 'none';
-            document.getElementById('view-mission').classList.add('active');
             document.getElementById('tab-bar').style.display = 'none';
-            document.getElementById('mission-title').textContent = 'Starting mission...';
-            currentStep = 0;
-            updateTasks(currentStep);   // render tasks immediately, don't wait on the fetch
+            document.getElementById('view-loading').style.display = 'flex';
+            document.getElementById('loading-cve-title').textContent = currentMissionId ? ('mission #' + currentMissionId) : '...';
+            document.getElementById('loading-log').textContent = 'Contacting backend...';
 
             fetch(API_BASE + '/missions/' + currentMissionId + '/start', { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     if (data.error) {
                         alert('Failed to start mission: ' + data.error);
+                        document.getElementById('view-loading').style.display = 'none';
                         exitMission();
                         return;
                     }
                     currentMissionData = data;
+                    document.getElementById('loading-log').textContent = (data.build_log || []).join('\n');
+
+                    document.getElementById('view-loading').style.display = 'none';
+                    isMissionActive = true;
+                    document.getElementById('view-mission').classList.add('active');
                     document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
-                    seconds = 0;
-                    if (timerInterval) clearInterval(timerInterval);
-                    timerInterval = setInterval(function() {
-                        seconds++;
-                        var mins = String(Math.floor(seconds / 60)).padStart(2, '0');
-                        var secs = String(seconds % 60).padStart(2, '0');
-                        document.getElementById('mission-timer').textContent = mins + ':' + secs;
-                    }, 1000);
-                    flagCaptured = false;
-                    document.getElementById('submit-report-btn').disabled = true;
-                    document.getElementById('blue-team-section').classList.remove('active');
-                    document.getElementById('rule-result').textContent = '';
-                    document.getElementById('rule-input').value = '';
-                    document.getElementById('wtab-splunk').classList.add('disabled');
-                    lastCommandTime = Date.now();
-                    failedAttempts = 0;
-                    lastCommands = [];
-                    hintTriggered = false;
-                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Click "Get Hint" if you\'re stuck.';
-                    if (term) {
-                        term.clear();
-                        term.write('\x1b[1;36m$ \x1b[0m');
-                        currentInput = '';
-                        cursorPosition = 0;
-                        commandHistory = [];
-                        historyIndex = 0;
-                    }
-                    if (currentMissionData.app_url) {
-                        const iframeContainer = document.querySelector('#target-container .iframe-container');
-                        if (currentMissionData.target_ready) {
-                            iframeContainer.innerHTML = '<iframe id="app-iframe" src="' + currentMissionData.app_url + '"></iframe>';
-                        } else {
-                            iframeContainer.innerHTML = '<div style="padding:20px;color:#94a3b8;">Target environment is still starting — try the Target tab again in a few seconds.</div>';
-                            setTimeout(() => {
-                                iframeContainer.innerHTML = '<iframe id="app-iframe" src="' + currentMissionData.app_url + '"></iframe>';
-                            }, 5000);
-                        }
-                    }
-                    switchWorkspace('terminal');
+                    currentStep = 0;
+                    updateTasks(currentStep);
+
+                    fetch(API_BASE + '/missions/' + currentMissionId + '/start', { method: 'POST' })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.error) {
+                                alert('Failed to start mission: ' + data.error);
+                                exitMission();
+                                return;
+                            }
+                            currentMissionData = data;
+                            document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
+                            seconds = 0;
+                            if (timerInterval) clearInterval(timerInterval);
+                            timerInterval = setInterval(function() {
+                                seconds++;
+                                var mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+                                var secs = String(seconds % 60).padStart(2, '0');
+                                document.getElementById('mission-timer').textContent = mins + ':' + secs;
+                            }, 1000);
+                            flagCaptured = false;
+                            document.getElementById('submit-report-btn').disabled = true;
+                            document.getElementById('blue-team-section').classList.remove('active');
+                            document.getElementById('rule-result').textContent = '';
+                            document.getElementById('rule-input').value = '';
+                            document.getElementById('wtab-splunk').classList.add('disabled');
+                            lastCommandTime = Date.now();
+                            failedAttempts = 0;
+                            lastCommands = [];
+                            hintTriggered = false;
+                            document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Click "Get Hint" if you\'re stuck.';
+                            if (term) {
+                                term.clear();
+                                term.write('\x1b[1;36m$ \x1b[0m');
+                                currentInput = '';
+                                cursorPosition = 0;
+                                commandHistory = [];
+                                historyIndex = 0;
+                            }
+                            if (currentMissionData.app_url) {
+                                const iframeContainer = document.querySelector('#target-container .iframe-container');
+                                if (currentMissionData.target_ready) {
+                                    iframeContainer.innerHTML = '<iframe id="app-iframe" src="' + currentMissionData.app_url + '"></iframe>';
+                                } else {
+                                    iframeContainer.innerHTML = '<div style="padding:20px;color:#94a3b8;">Target environment is still starting — try the Target tab again in a few seconds.</div>';
+                                    setTimeout(() => {
+                                        iframeContainer.innerHTML = '<iframe id="app-iframe" src="' + currentMissionData.app_url + '"></iframe>';
+                                    }, 5000);
+                                }
+                            }
+                            switchWorkspace('terminal');
+                        })
                 })
                 .catch(err => {
                     alert('Failed to start mission: ' + err.message);
+                    document.getElementById('view-loading').style.display = 'none';
                     exitMission();
                 });
         }
