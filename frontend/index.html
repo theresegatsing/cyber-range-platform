@@ -1194,6 +1194,8 @@
                 term.writeln('\x1b[1;36mAvailable commands\x1b[0m');
                 term.writeln('\x1b[2;37m  nmap <target>           scan the target for open services\x1b[0m');
                 term.writeln('\x1b[2;37m  curl "/path?p=value"    send a REAL request to the target\x1b[0m');
+                term.writeln('\x1b[2;37m  source /path            show the raw HTML source (reveals form fields)\x1b[0m');
+                term.writeln('\x1b[2;37m  lab                     show the target surface (endpoint, parameter)\x1b[0m');
                 term.writeln('\x1b[2;37m  open /path              load a path in the Target tab\x1b[0m');
                 term.writeln('\x1b[2;37m  cat brief               reprint the mission brief\x1b[0m');
                 term.writeln('\x1b[2;37m  history                 show requests that reached the target\x1b[0m');
@@ -1241,6 +1243,12 @@
                 return;
             }
 
+            if (first === 'source' || first === 'view-source') {
+                const p = cmd.slice(first.length).trim() || '/';
+                runCurl('curl "' + p + '"', true);
+                return;
+            }
+
             if (first === 'curl' || first === 'wget' || first === 'get') { runCurl(cmd); return; }
 
             failedAttempts++;
@@ -1261,11 +1269,14 @@
             return arg.startsWith('/') ? arg : '/' + arg;
         }
 
-        function runCurl(cmd) {
+        function runCurl(cmd, raw) {
             const path = extractPath(cmd);
             if (!path) {
                 term.writeln('\x1b[2;37mUsage: curl "/endpoint?param=value"\x1b[0m');
                 prompt_(); return;
+            }
+            if (/\s=|=\s/.test(cmd) && !/\s=|=\s/.test(path)) {
+                term.writeln('\x1b[1;33mNote: query strings take no spaces around "=" — sent as ' + path + '\x1b[0m');
             }
             commandRunning = true;
             currentTargetPath = path;
@@ -1280,27 +1291,50 @@
                     }
                     term.writeln('\x1b[2;37mHTTP ' + data.status + '\x1b[0m');
                     const body = data.body || '';
-                    body.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
-                        .split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim())
-                        .slice(0, 30)
-                        .forEach(l => term.writeln('\x1b[2;37m' + l + '\x1b[0m'));
 
-                    if (body.includes('FLAG-FOUND')) {
-                        failedAttempts = 0;
-                        captureFlag(path);
-                    } else if (/root:x:0:0/.test(body)) {
+                    if (raw) {
+                        body.split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim())
+                            .slice(0, 40)
+                            .forEach(l => term.writeln('\x1b[2;36m' + l + '\x1b[0m'));
+                    } else {
+                        body.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+                            .replace(/&larr;/g, '<-').replace(/&amp;/g, '&')
+                            .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+                            .split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim())
+                            .slice(0, 30)
+                            .forEach(l => term.writeln('\x1b[2;37m' + l + '\x1b[0m'));
+
+                        if (/<form/i.test(body)) describeForms(body);
+                    }
+
+                    if (body.includes('FLAG-FOUND')) { failedAttempts = 0; captureFlag(path); }
+                    else if (/root:x:0:0/.test(body)) {
                         term.writeln('\x1b[1;33mSystem file read — traversal confirmed. Now find the app\'s own secret.\x1b[0m');
                         failedAttempts = 0;
-                    } else if (/Directory listing|Contents of/.test(body)) {
+                    }
+                    else if (/Directory listing|Contents of/.test(body)) {
                         term.writeln('\x1b[1;33mYou enumerated a directory. Pick a file from it and read it.\x1b[0m');
                         failedAttempts = 0;
-                    } else {
+                    }
+                    else {
                         failedAttempts++;
                         if (failedAttempts >= 3 && !hintTriggered) { hintTriggered = true; fetchAIHint('failure', failedAttempts); }
                     }
                 })
                 .catch(err => term.writeln('\x1b[1;31mcurl failed: ' + err.message + '\x1b[0m'))
                 .finally(() => { commandRunning = false; prompt_(); });
+        }
+
+        function describeForms(html) {
+            const forms = html.match(/<form[\s\S]*?<\/form>/gi) || [];
+            const single = /<form[^>]*>/i.test(html) && !forms.length ? [html] : forms;
+            single.forEach(f => {
+                const action = (f.match(/action\s*=\s*["']([^"']+)/i) || [])[1] || '/';
+                const names = [...f.matchAll(/<input[^>]*name\s*=\s*["']([^"']+)/gi)].map(m => m[1]);
+                if (!names.length) return;
+                term.writeln('\x1b[1;36m  [form] ' + action + '  inputs: ' + names.join(', ') + '\x1b[0m');
+                term.writeln('\x1b[2;37m  try: curl "' + action + '?' + names[0] + '=<value>"\x1b[0m');
+            });
         }
 
         function showActivity(blueMode) {

@@ -143,6 +143,13 @@ Give ONE specific next action, based on what they have ALREADY tried.
 - If they are close (partial payload), refine it — do not restate what worked.
 - Address them as "you", under 30 words, no preamble.
 - Never reveal the full winning payload.
+- Structure every hint as: the technique + where to apply it.
+  Good: "The viewer joins your input onto a base directory — feed it a path that
+  climbs out of that directory instead of a filename."
+  Bad: "try sessionId=to_exploit" (a placeholder value teaches nothing).
+- Name the parameter only alongside the technique, never alone.
+- If their requests show identical responses to different inputs, tell them the
+  parameter name is likely wrong and to re-read the page source.
 
 Hint:
 """
