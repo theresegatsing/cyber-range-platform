@@ -1659,12 +1659,21 @@
             } else if (tab === 'target') { target.classList.remove('hidden'); }
             else if (tab === 'splunk') {
                 splunk.classList.remove('hidden');
-                const iframe = document.getElementById('splunk-iframe');
-                if (!iframe.src || iframe.src === 'about:blank') {
-                    const spl = 'search index=cyber_range tag="mission-' + currentMissionId + '"';
-                    iframe.src = SPLUNK_URL + '/en-US/app/search/search?q=' +
-                                encodeURIComponent(spl) + '&earliest=-24h&latest=now';
-                }
+                const c = splunk.querySelector('.iframe-container');
+                const spl = 'index=cyber_range tag="mission-' + currentMissionId + '"';
+                const url = SPLUNK_URL + '/en-US/app/search/search?q=' +
+                            encodeURIComponent('search ' + spl) + '&earliest=-24h&latest=now';
+                c.innerHTML =
+                    '<div style="padding:28px;font-size:14px;line-height:1.7">' +
+                    '<h3 style="margin-bottom:10px;color:#1e293b">Blue Team: log investigation</h3>' +
+                    '<p style="color:#475569">Open Splunk in a new tab and run this search to find ' +
+                    'the attack traces from your exploit:</p>' +
+                    '<pre style="background:#1e293b;color:#e2e8f0;padding:14px;border-radius:8px;' +
+                    'font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap;margin:12px 0">' +
+                    spl + '</pre>' +
+                    '<a href="' + url + '" target="_blank" class="btn btn-primary" ' +
+                    'style="display:inline-block;text-decoration:none">Open Splunk search</a>' +
+                    '</div>';
             }
         }
 
