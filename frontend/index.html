@@ -1307,7 +1307,20 @@
                         if (/<form/i.test(body)) describeForms(body);
                     }
 
-                    if (body.includes('FLAG-FOUND')) { failedAttempts = 0; captureFlag(path); }
+                    const token = currentMissionData?.lab?.flag_token;
+                    const flagHit = body.includes('FLAG-FOUND') &&
+                                    (!token || body.includes(token)) &&
+                                    !/FLAG_TOKEN\s*=/.test(body);
+
+                    if (flagHit) {
+                        failedAttempts = 0;
+                        captureFlag(path);
+                    }
+                    else if (/def\s+\w+\(|import\s+os|app\.route/.test(body)) {
+                        term.writeln('\x1b[1;33mYou read the application source — that\'s real impact.\x1b[0m');
+                        term.writeln('\x1b[1;33mIt names the file holding the secret. Read that file next.\x1b[0m');
+                        failedAttempts = 0;
+                    }
                     else if (/root:x:0:0/.test(body)) {
                         term.writeln('\x1b[1;33mSystem file read — traversal confirmed. Now find the app\'s own secret.\x1b[0m');
                         failedAttempts = 0;
@@ -1318,7 +1331,10 @@
                     }
                     else {
                         failedAttempts++;
-                        if (failedAttempts >= 3 && !hintTriggered) { hintTriggered = true; fetchAIHint('failure', failedAttempts); }
+                        if (failedAttempts >= 3 && !hintTriggered) {
+                            hintTriggered = true;
+                            fetchAIHint('failure', failedAttempts);
+                        }
                     }
                 })
                 .catch(err => term.writeln('\x1b[1;31mcurl failed: ' + err.message + '\x1b[0m'))

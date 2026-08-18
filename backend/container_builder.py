@@ -20,7 +20,7 @@ LABEL_KEY = "cyber_range_pattern"
 LAB_KEY = "cyber_range_lab"
 
 LAB_FIELDS = ("app_title", "endpoint", "param_name", "public_file",
-              "secret_file", "table_name", "base_command")
+              "secret_file", "table_name", "base_command","flag_token", "flag_reason" )
 
 
 def get_image_tag(cve_id: str) -> str:

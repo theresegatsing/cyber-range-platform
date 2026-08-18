@@ -1,5 +1,6 @@
 import requests
 import json
+import secrets
 
 # Ollama API endpoint
 OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -429,10 +430,15 @@ JSON:
     }
 
     params = _sanitize(pattern, parsed)
+
     params["cve_id"] = cve_id
-    params["flag_message"] = (
-        f"FLAG-FOUND: {cve_id} — " + FLAG_TEXT.get(pattern, "exploited successfully") + "."
-    )
+    params["flag_token"] = secrets.token_hex(8)
+    params["flag_reason"] = {
+        "path_traversal":    "you escaped the document directory and read a protected file",
+        "sql_injection":     "you bypassed the query filter and dumped the table",
+        "command_injection": "you chained a shell command through the input",
+        "reflected_xss":     "your payload was reflected unsanitized into the response",
+    }.get(pattern, "exploited successfully")
     return params
 
 

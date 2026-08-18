@@ -7,8 +7,12 @@ PUBLIC_DIR = "/app/files"
 PUBLIC_FILE = "{public_file}"
 SECRET_FILE = "{secret_file}"
 SECRET_PATH = os.path.join("/app", SECRET_FILE)
-FLAG = "{flag_message}"
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
 
+def _flag():
+    # assembled at runtime — the marker never appears verbatim in this source
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
 
 def _seed():
     os.makedirs(PUBLIC_DIR, exist_ok=True)
@@ -21,7 +25,7 @@ def _seed():
         f.write("Reminder: move confidential material out of the web root.\n")
 
     with open(SECRET_PATH, "w") as f:
-        f.write(FLAG + "\n")
+        f.write(_flag() + "\n")
 
     print("[LAB] public dir : " + PUBLIC_DIR, flush=True)
     print("[LAB] secret file: " + SECRET_PATH, flush=True)
