@@ -17,6 +17,11 @@ DEFAULT_PARAMS = {
 
 LABEL_KEY = "cyber_range_pattern"
 
+LAB_KEY = "cyber_range_lab"
+
+LAB_FIELDS = ("app_title", "endpoint", "param_name", "public_file",
+              "secret_file", "table_name", "base_command")
+
 
 def get_image_tag(cve_id: str) -> str:
     safe = re.sub(r'[^a-z0-9\-]', '-', cve_id.lower())
@@ -81,8 +86,12 @@ def build_cve_image(docker_client, cve_id: str, description: str, emit=None):
         cached_pattern = labels.get(LABEL_KEY)
         cached_fp = labels.get(FINGERPRINT_KEY)
         if cached_pattern and cached_fp == _template_fingerprint(cached_pattern):
+            try:
+                lab = json.loads(labels.get(LAB_KEY) or "{}")
+            except Exception:
+                lab = {}
             log("image", f"Cached image found ({cached_pattern}) — skipping build")
-            return tag, cached_pattern
+            return tag, cached_pattern, lab
         log("image", "Template changed since this image was built — rebuilding")
         try:
             docker_client.images.remove(tag, force=True)
@@ -90,6 +99,8 @@ def build_cve_image(docker_client, cve_id: str, description: str, emit=None):
             log("image", f"Could not remove stale image: {e}")
     except Exception:
         log("image", "No cached image — building from template")
+
+    
 
     # ---- 2. classify + fill template ----
     pattern = _resolve_pattern(cve_id, description, log)
@@ -129,12 +140,19 @@ def build_cve_image(docker_client, cve_id: str, description: str, emit=None):
         f.write(dockerfile)
 
     # ---- 3. build, streaming docker's own output ----
-    log("build", f"Building image {tag} from pattern '{pattern}' (first run for this CVE)…")
+    lab = {k: params[k] for k in LAB_FIELDS if k in params}
+
+    log("build", f"Building image {tag} from pattern '{pattern}'…")
     last_step = None
     try:
         for chunk in docker_client.api.build(
             path=build_path, tag=tag, rm=True,
-            labels={LABEL_KEY: pattern, FINGERPRINT_KEY: _template_fingerprint(pattern),}, decode=True
+            labels={
+                LABEL_KEY: pattern,
+                FINGERPRINT_KEY: _template_fingerprint(pattern),
+                LAB_KEY: json.dumps(lab),
+            },
+            decode=True
         ):
             if "stream" in chunk:
                 line = chunk["stream"].strip()
@@ -146,10 +164,9 @@ def build_cve_image(docker_client, cve_id: str, description: str, emit=None):
     except Exception as e:
         raise RuntimeError(f"Docker build failed for {tag}: {e}") from e
 
-    # low-level api.build doesn't return an image object — confirm it landed
     docker_client.images.get(tag)
     log("build", f"Image {tag} ready")
-    return tag, pattern
+    return tag, pattern, lab
 
 
 import hashlib

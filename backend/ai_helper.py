@@ -5,28 +5,26 @@ import json
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "phi3:mini"
 
-def query_ollama(prompt: str, timeout: int = 120) -> str:
+def query_ollama(prompt: str, timeout: int = 120, json_mode: bool = False) -> str:
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "keep_alive": "30m",
+        "options": {"num_predict": 300, "temperature": 0.4 if json_mode else 0.7},
+    }
+    if json_mode:
+        payload["format"] = "json"
     try:
-        response = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "keep_alive": "30m",
-                "options": {"num_predict": 220, "temperature": 0.7}
-            },
-            timeout=timeout
-        )
-        response.raise_for_status()
-        return response.json().get("response", "")
-
+        r = requests.post(OLLAMA_URL, json=payload, timeout=timeout)
+        r.raise_for_status()
+        return r.json().get("response", "")
     except requests.exceptions.Timeout:
-        return "Error: brief generation timed out."
-
+        return ""
     except Exception as e:
-        return f"Error: Could not reach Ollama. Make sure it's running. Details: {str(e)}"
-
+        print(f"[OLLAMA ERROR] {e}")
+        return ""
+    
 # ----------------------------------------------------------
 # AI FEATURE 1: Red Team Mission Brief
 # ----------------------------------------------------------
@@ -114,29 +112,43 @@ Blue Team Brief:
 # ----------------------------------------------------------
 # AI FEATURE 3: Smart Hint (FIXED - Uses CVE Description)
 # ----------------------------------------------------------
-def generate_hint(task_name: str, current_step: str, user_actions: list, cve_description: str = "") -> str:
-    """Generate a hint based on the CVE and what the learner has tried."""
-    actions_text = ", ".join(user_actions) if user_actions else "No actions recorded yet"
-    
+def generate_hint(task_name: str, current_step: str, user_actions: list,
+                  cve_description: str = "", target_activity: list = None,
+                  lab_info: dict = None) -> str:
+    """Hint informed by BOTH terminal commands and real requests hitting the container."""
+    actions_text = ", ".join(user_actions) if user_actions else "nothing yet"
+    activity = target_activity or []
+    activity_text = "\n".join(f"  {a}" for a in activity[-8:]) if activity else "  (no requests yet)"
+
+    lab = lab_info or {}
+    lab_text = ""
+    if lab.get("endpoint"):
+        lab_text = (f"The lab exposes /{lab['endpoint']} taking a "
+                    f"'{lab.get('param_name', 'input')}' parameter.")
+
     prompt = f"""
-You are a cybersecurity instructor giving a hint to a learner.
+You are a cybersecurity instructor guiding a learner through a hands-on lab.
 
-The vulnerability is described as:
-{cve_description}
+Vulnerability: {cve_description}
+{lab_text}
 
-The learner is on: {task_name} (Step: {current_step})
-They have tried: {actions_text}
+The learner is on: {task_name} ({current_step})
+Terminal commands they typed: {actions_text}
+Actual HTTP requests that reached the target:
+{activity_text}
 
-Give ONE specific, actionable hint that helps them figure out what to do next.
-- Write in DIRECT, ACTIVE voice addressing the learner as "you"
-- DO NOT use "encourage", "try to", or "consider"
-- DO NOT give away the full answer
-- Make it specific to the vulnerability described above
-- Keep it under 30 words
+Give ONE specific next action, based on what they have ALREADY tried.
+- If they have sent no requests, tell them to explore the target's main page first.
+- If they are sending normal requests, nudge them toward modifying the parameter.
+- If they are close (partial payload), refine it — do not restate what worked.
+- Address them as "you", under 30 words, no preamble.
+- Never reveal the full winning payload.
 
 Hint:
 """
-    return query_ollama(prompt)
+    return query_ollama(prompt) or "Explore the target's main page, then try altering the parameter value."
+
+
 
 # ----------------------------------------------------------
 # AI FEATURE 4: Report Grading
@@ -386,7 +398,8 @@ Rules:
 
 JSON:
 """
-    raw = query_ollama(prompt)
+    raw = query_ollama(prompt, json_mode=True)
+    print(f"[PARAMS RAW] {pattern}: {raw[:300]}")
     parsed = {}
     try:
         # models love wrapping JSON in fences or chatter — grab the first object
@@ -397,6 +410,9 @@ JSON:
         parsed = {}
     if not isinstance(parsed, dict):
         parsed = {}
+
+    parsed.update(_seed_from_description(description))   # CVE text overrides the model
+    params = _sanitize(pattern, parsed)
 
     FLAG_TEXT = {
         "path_traversal":    "you escaped the document directory and read a protected file",
@@ -411,3 +427,18 @@ JSON:
         f"FLAG-FOUND: {cve_id} — " + FLAG_TEXT.get(pattern, "exploited successfully") + "."
     )
     return params
+
+
+def _seed_from_description(description: str) -> dict:
+    """Extract identifiers the CVE text states outright. Beats the model every time."""
+    seed = {}
+    m = re.search(r"\b([A-Za-z_]\w*)\s+(?:argument|parameter|param|field)\b", description, re.I)
+    if m and IDENT_RE.match(m.group(1)):
+        seed["param_name"] = m.group(1)
+    m = re.search(r"\b([A-Za-z_]\w*)\s+function\b", description, re.I)
+    if m and IDENT_RE.match(m.group(1)):
+        seed["endpoint"] = m.group(1)
+    m = re.search(r"\b(?:table|relation)\s+[`'\"]?([A-Za-z_]\w*)", description, re.I)
+    if m and IDENT_RE.match(m.group(1)):
+        seed["table_name"] = m.group(1)
+    return seed

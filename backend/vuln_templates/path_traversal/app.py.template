@@ -4,19 +4,27 @@ import os
 app = Flask(__name__)
 
 PUBLIC_DIR = "/app/files"
-SECRET_PATH = "/app/{secret_file}"
+PUBLIC_FILE = "{public_file}"
+SECRET_FILE = "{secret_file}"
+SECRET_PATH = os.path.join("/app", SECRET_FILE)
 FLAG = "{flag_message}"
 
 
 def _seed():
     os.makedirs(PUBLIC_DIR, exist_ok=True)
-    public = os.path.join(PUBLIC_DIR, "{public_file}")
-    if not os.path.exists(public):
-        with open(public, "w") as f:
-            f.write("This is a normal public document served from " + PUBLIC_DIR + ".\n")
-    if not os.path.exists(SECRET_PATH):
-        with open(SECRET_PATH, "w") as f:
-            f.write(FLAG + "\n")
+
+    public = os.path.join(PUBLIC_DIR, PUBLIC_FILE)
+    with open(public, "w") as f:
+        f.write("This is a normal public document served from " + PUBLIC_DIR + ".\n")
+
+    with open(os.path.join(PUBLIC_DIR, "notes.txt"), "w") as f:
+        f.write("Reminder: move confidential material out of the web root.\n")
+
+    with open(SECRET_PATH, "w") as f:
+        f.write(FLAG + "\n")
+
+    print("[LAB] public dir : " + PUBLIC_DIR, flush=True)
+    print("[LAB] secret file: " + SECRET_PATH, flush=True)
 
 
 _seed()
@@ -25,10 +33,13 @@ PAGE = """
 <h3>{app_title}</h3>
 <p style="color:#555">Asset: {asset_name}. Public documents live in <code>/app/files</code>.</p>
 <form action="/{endpoint}">
-  <input name="{param_name}" value="{public_file}" size="44">
+  <input name="{param_name}" value="{public_file}" size="50">
   <button>View file</button>
 </form>
+<p style="color:#888;font-size:13px">Tip: the viewer resolves whatever path you give it.</p>
 """
+
+FOOTER = "<hr><a href='/'>&larr; Back</a>"
 
 
 @app.route('/')
@@ -38,15 +49,37 @@ def home():
 
 @app.route('/{endpoint}')
 def vuln():
-    value = request.args.get('{param_name}', '{public_file}')
+    value = request.args.get('{param_name}', PUBLIC_FILE)
+
+    # intentionally vulnerable — no basename(), no realpath containment check
+    path = os.path.join(PUBLIC_DIR, value)
+
     try:
-        # intentionally vulnerable — no basename(), no realpath containment check
-        path = os.path.join(PUBLIC_DIR, value)
-        with open(path, 'r') as f:
+        if os.path.isdir(path):
+            # verbose error handling leaks the directory contents
+            entries = sorted(os.listdir(path))
+            listing = "\n".join("  " + e for e in entries)
+            return ("<pre>Directory listing for " + os.path.realpath(path) +
+                    ":\n\n" + listing + "</pre>" + FOOTER)
+
+        with open(path, 'r', errors='replace') as f:
             body = f.read()
-        return f"<pre>{{body}}</pre><hr><a href='/'>&larr; Back</a>"
+        return "<pre>" + body + "</pre>" + FOOTER
+
+    except FileNotFoundError:
+        parent = os.path.dirname(path) or "/"
+        hint = ""
+        try:
+            if os.path.isdir(parent):
+                entries = sorted(os.listdir(parent))
+                hint = ("\n\nContents of " + os.path.realpath(parent) + ":\n" +
+                        "\n".join("  " + e for e in entries))
+        except Exception:
+            pass
+        return ("<pre>Error: no such file: " + path + hint + "</pre>" + FOOTER)
+
     except Exception as e:
-        return f"<pre>Error: {{e}}</pre><hr><a href='/'>&larr; Back</a>"
+        return "<pre>Error: " + str(e) + "</pre>" + FOOTER
 
 
 if __name__ == '__main__':

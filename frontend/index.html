@@ -903,10 +903,16 @@
         let hintTriggered = false;
         let isMissionActive = false;
 
+        let commandRunning = false;
+        let currentTargetPath = '/';
+        let successfulPayload = null;
+
         document.addEventListener('DOMContentLoaded', () => {
             loadMissions();
             initTerminal();
         });
+
+        
 
         function initTerminal() {
             if (terminalInitialized) return;
@@ -914,18 +920,12 @@
             if (!wrapper) return;
             term = new Terminal({
                 cursorBlink: true,
+                scrollback: 2000,
+                rightClickSelectsWord: true,
                 theme: {
-                    background: '#1e293b',
-                    foreground: '#e2e8f0',
-                    cursor: '#0d9488',
-                    black: '#1e293b',
-                    red: '#ef4444',
-                    green: '#10b981',
-                    yellow: '#f59e0b',
-                    blue: '#3b82f6',
-                    magenta: '#0d9488',
-                    cyan: '#0d9488',
-                    white: '#f8fafc'
+                    background: '#1e293b', foreground: '#e2e8f0', cursor: '#0d9488',
+                    black: '#1e293b', red: '#ef4444', green: '#10b981', yellow: '#f59e0b',
+                    blue: '#3b82f6', magenta: '#0d9488', cyan: '#0d9488', white: '#f8fafc'
                 },
                 convertEol: true
             });
@@ -933,7 +933,27 @@
             term.loadAddon(fitAddon);
             term.open(wrapper);
             fitAddon.fit();
-            term.write('\x1b[1;36m$ \x1b[0m');
+
+            // --- copy / paste ---
+            term.attachCustomKeyEventHandler((e) => {
+                if (e.type !== 'keydown') return true;
+                const mod = e.ctrlKey || e.metaKey;
+                if (mod && e.key.toLowerCase() === 'c' && term.hasSelection()) {
+                    navigator.clipboard.writeText(term.getSelection());
+                    term.clearSelection();
+                    return false;
+                }
+                if (mod && e.key.toLowerCase() === 'v') {
+                    navigator.clipboard.readText().then(t => { if (t) pasteIntoTerminal(t); });
+                    return false;
+                }
+                return true;
+            });
+            wrapper.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                navigator.clipboard.readText().then(t => { if (t) pasteIntoTerminal(t); });
+            });
+
             term.onData((data) => {
                 lastCommandTime = Date.now();
                 hintTriggered = false;
@@ -944,6 +964,17 @@
             });
             terminalInitialized = true;
         }
+
+        function pasteIntoTerminal(text) {
+            if (commandRunning) return;
+            const clean = text.replace(/\r?\n/g, ' ').replace(/[^\x20-\x7e]/g, '');
+            if (!clean) return;
+            currentInput = currentInput.substring(0, cursorPosition) + clean +
+                        currentInput.substring(cursorPosition);
+            cursorPosition += clean.length;
+            redrawInputLine();
+        }
+
 
         function startIdleCheck() {
             if (idleCheckInterval) clearInterval(idleCheckInterval);
@@ -961,21 +992,25 @@
         }
 
         function fetchAIHint(trigger, details) {
-            const actions = lastCommands.slice(-5).join(', ');
+            const actions = lastCommands.slice(-5).join(',');
             const cveDesc = currentMissionData?.description || '';
-            document.getElementById('help-hint').innerHTML = '<span class="hint-icon"></span> Thinking...';
-            const url = `${API_BASE}/ai/hint?task_name=Step ${currentStep+1}&current_step=Step ${currentStep+1}&actions=${encodeURIComponent(actions)}&cve_description=${encodeURIComponent(cveDesc)}`;
-            fetch(url)
-                .then(res => res.json())
+            document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> Thinking…';
+            const url = API_BASE + '/ai/hint?task_name=' + encodeURIComponent('Step ' + (currentStep + 1)) +
+                        '&current_step=' + encodeURIComponent('Step ' + (currentStep + 1)) +
+                        '&actions=' + encodeURIComponent(actions) +
+                        '&cve_description=' + encodeURIComponent(cveDesc) +
+                        '&vulnerability_id=' + currentMissionId;
+            fetch(url).then(r => r.json())
                 .then(data => {
-                    const hint = data.hint || 'Try exploring the target with basic reconnaissance commands.';
-                    let triggerText = '';
-                    if (trigger === 'idle') triggerText = '⏳ You\'ve been idle for ' + Math.round(details) + ' seconds. ';
-                    else if (trigger === 'failure') triggerText = '✗ You\'ve tried this step multiple times. ';
-                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon"></span> ' + triggerText + hint;
+                    let pre = '';
+                    if (trigger === 'idle') pre = '⏳ Idle for ' + Math.round(details) + 's. ';
+                    else if (trigger === 'failure') pre = '✗ A few attempts in. ';
+                    document.getElementById('help-hint').innerHTML =
+                        '<span class="hint-icon">◆</span> ' + pre + (data.hint || 'Explore the target first.');
                 })
                 .catch(err => {
-                    document.getElementById('help-hint').innerHTML = '<span class="hint-icon"></span> Could not fetch hint: ' + err.message;
+                    document.getElementById('help-hint').innerHTML =
+                        '<span class="hint-icon">◆</span> Could not fetch hint: ' + err.message;
                 });
         }
 
@@ -1032,74 +1067,58 @@
             if (data === '\r') {
                 term.write('\r\n');
                 const cmd = currentInput.trim();
-                currentInput = '';
-                cursorPosition = 0;
+                currentInput = ''; cursorPosition = 0;
                 if (cmd) {
                     commandHistory.push(cmd);
                     historyIndex = commandHistory.length;
                     lastCommands.push(cmd);
                     if (lastCommands.length > 10) lastCommands.shift();
                     processCommand(cmd);
-                } else {
-                    term.write('\x1b[1;36m$ \x1b[0m');
-                }
+                } else { prompt_(); }
                 return;
             }
             if (data === '\x7f' || data === '\b') {
                 if (cursorPosition > 0) {
-                    const before = currentInput.substring(0, cursorPosition - 1);
-                    const after = currentInput.substring(cursorPosition);
-                    currentInput = before + after;
-                    cursorPosition--;
-                    redrawInputLine();
+                    currentInput = currentInput.substring(0, cursorPosition - 1) +
+                                currentInput.substring(cursorPosition);
+                    cursorPosition--; redrawInputLine();
                 }
                 return;
             }
-            if (data === '\x1b[D') {
-                if (cursorPosition > 0) { cursorPosition--; term.write('\x1b[D'); }
-                return;
-            }
-            if (data === '\x1b[C') {
-                if (cursorPosition < currentInput.length) { cursorPosition++; term.write('\x1b[C'); }
-                return;
-            }
+            if (data === '\x1b[D') { if (cursorPosition > 0) { cursorPosition--; term.write('\x1b[D'); } return; }
+            if (data === '\x1b[C') { if (cursorPosition < currentInput.length) { cursorPosition++; term.write('\x1b[C'); } return; }
             if (data === '\x1b[A') {
                 if (historyIndex > 0) {
-                    historyIndex--;
-                    currentInput = commandHistory[historyIndex] || '';
-                    cursorPosition = currentInput.length;
-                    redrawInputLine();
+                    historyIndex--; currentInput = commandHistory[historyIndex] || '';
+                    cursorPosition = currentInput.length; redrawInputLine();
                 }
                 return;
             }
             if (data === '\x1b[B') {
                 if (historyIndex < commandHistory.length - 1) {
-                    historyIndex++;
-                    currentInput = commandHistory[historyIndex] || '';
-                    cursorPosition = currentInput.length;
-                    redrawInputLine();
-                } else {
-                    historyIndex = commandHistory.length;
-                    currentInput = '';
-                    cursorPosition = 0;
-                    redrawInputLine();
-                }
+                    historyIndex++; currentInput = commandHistory[historyIndex] || '';
+                } else { historyIndex = commandHistory.length; currentInput = ''; }
+                cursorPosition = currentInput.length; redrawInputLine();
                 return;
             }
+            if (data === '\x1b[H' || data === '\x1b[1~') { cursorPosition = 0; redrawInputLine(); return; }
+            if (data === '\x1b[F' || data === '\x1b[4~') { cursorPosition = currentInput.length; redrawInputLine(); return; }
             if (data === '\x1b[3~') {
                 if (cursorPosition < currentInput.length) {
-                    const before = currentInput.substring(0, cursorPosition);
-                    const after = currentInput.substring(cursorPosition + 1);
-                    currentInput = before + after;
+                    currentInput = currentInput.substring(0, cursorPosition) +
+                                currentInput.substring(cursorPosition + 1);
                     redrawInputLine();
                 }
                 return;
             }
-            if (data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
-                const before = currentInput.substring(0, cursorPosition);
-                const after = currentInput.substring(cursorPosition);
-                currentInput = before + data + after;
-                cursorPosition++;
+            if (data === '\x15') { currentInput = currentInput.substring(cursorPosition); cursorPosition = 0; redrawInputLine(); return; }
+            if (data === '\x0c') { term.clear(); redrawInputLine(); return; }
+
+            // printable text — one char OR a multi-char paste
+            if (/^[\x20-\x7e]+$/.test(data)) {
+                currentInput = currentInput.substring(0, cursorPosition) + data +
+                            currentInput.substring(cursorPosition);
+                cursorPosition += data.length;
                 redrawInputLine();
             }
         }
@@ -1144,88 +1163,100 @@
             }
         }
 
-        let commandRunning = false;
-        let currentTargetPath = '/';
+      
 
         function prompt_() { term.write('\x1b[1;36m$ \x1b[0m'); }
 
+        function terminalWelcome() {
+            const lab = currentMissionData?.lab || {};
+            term.clear();
+            term.writeln('\x1b[1;36m╔═══════════════════════════════════════════════════════╗\x1b[0m');
+            term.writeln('\x1b[1;36m║  ' + (currentMissionData?.cve_id || 'Mission').padEnd(51) + '║\x1b[0m');
+            term.writeln('\x1b[1;36m╚═══════════════════════════════════════════════════════╝\x1b[0m');
+            term.writeln('');
+            term.writeln('\x1b[2;37mStep 1 — Reconnaissance. Find out what the target exposes.\x1b[0m');
+            term.writeln('\x1b[1;33mStart with:  nmap ' + (currentMissionData?.app_url || 'target') + '\x1b[0m');
+            term.writeln('\x1b[2;37mThen fetch the main page:  curl "/"\x1b[0m');
+            term.writeln('\x1b[2;37mType "help" for all commands. Ctrl+Shift+V or right-click to paste.\x1b[0m');
+            term.writeln('');
+            prompt_();
+        }
+
         function processCommand(cmd) {
             if (!cmd) { prompt_(); return; }
-            const lowerCmd = cmd.toLowerCase();
+            const lower = cmd.toLowerCase();
+            const first = lower.split(/\s+/)[0];
 
             if (cmd === 'next') { forceNextStep(); prompt_(); return; }
+            if (first === 'clear') { term.clear(); prompt_(); return; }
 
-            if (cmd === 'help') {
-                term.writeln('\x1b[2;37mCommands:\x1b[0m');
-                term.writeln('\x1b[2;37m  nmap <target>            recon the target\x1b[0m');
-                term.writeln('\x1b[2;37m  curl "<url or /path>"    send a REAL request to the target\x1b[0m');
-                term.writeln('\x1b[2;37m  cat brief                reprint the mission brief\x1b[0m');
-                term.writeln('\x1b[2;37m  index=main <terms>       search Splunk (Blue Team phase)\x1b[0m');
+            if (first === 'help') {
+                term.writeln('\x1b[1;36mAvailable commands\x1b[0m');
+                term.writeln('\x1b[2;37m  nmap <target>           scan the target for open services\x1b[0m');
+                term.writeln('\x1b[2;37m  curl "/path?p=value"    send a REAL request to the target\x1b[0m');
+                term.writeln('\x1b[2;37m  open /path              load a path in the Target tab\x1b[0m');
+                term.writeln('\x1b[2;37m  cat brief               reprint the mission brief\x1b[0m');
+                term.writeln('\x1b[2;37m  history                 show requests that reached the target\x1b[0m');
+                term.writeln('\x1b[2;37m  hint                    ask the AI instructor\x1b[0m');
+                term.writeln('\x1b[2;37m  index=main <terms>      search Splunk (Blue Team phase)\x1b[0m');
                 term.writeln('\x1b[2;37m  clear | next | help\x1b[0m');
-                prompt_();
-                return;
+                prompt_(); return;
             }
 
-            if (cmd === 'clear') { term.clear(); prompt_(); return; }
+            if (first === 'hint') { requestHint(); term.writeln('\x1b[2;37mAsking the instructor — see the Help panel.\x1b[0m'); prompt_(); return; }
 
-            if (lowerCmd.startsWith('cat') && lowerCmd.includes('brief')) {
+            if (first === 'cat' && lower.includes('brief')) {
                 term.writeln('\x1b[2;37m' + (currentMissionData?.red_team_brief || 'No brief available.') + '\x1b[0m');
-                prompt_();
-                return;
+                prompt_(); return;
             }
 
-            if (lowerCmd.startsWith('nmap')) {
+            if (first === 'history') { showActivity(); return; }
+
+            if (first === 'open') {
+                const p = cmd.slice(4).trim() || '/';
+                const base = currentMissionData?.app_url;
+                if (!base) { term.writeln('\x1b[1;31mNo target URL.\x1b[0m'); prompt_(); return; }
+                const c = document.querySelector('#target-container .iframe-container');
+                c.innerHTML = '<iframe id="app-iframe" src="' + base + (p.startsWith('/') ? p : '/' + p) + '"></iframe>';
+                switchWorkspace('target');
+                term.writeln('\x1b[2;37mOpened ' + p + ' in the Target tab.\x1b[0m');
+                prompt_(); return;
+            }
+
+            if (first === 'nmap') {
                 const port = currentMissionData?.container_port || 80;
                 term.writeln('\x1b[2;37mStarting Nmap 7.94\x1b[0m');
-                term.writeln('\x1b[2;37mPORT     STATE SERVICE\x1b[0m');
-                term.writeln('\x1b[2;37m' + port + '/tcp open  http\x1b[0m');
+                term.writeln('\x1b[2;37mPORT     STATE SERVICE VERSION\x1b[0m');
+                term.writeln('\x1b[2;37m' + port + '/tcp open  http    Werkzeug/Flask (Python)\x1b[0m');
                 if (currentStep === 0) {
-                    term.writeln('\x1b[1;32mHTTP service found. Explore it with: curl "/"\x1b[0m');
-                    currentStep = 1;
-                    updateTasks(currentStep);
-                    failedAttempts = 0;
+                    term.writeln('\x1b[1;32mHTTP service confirmed. Fetch the main page:  curl "/"\x1b[0m');
+                    currentStep = 1; updateTasks(currentStep); failedAttempts = 0;
                 }
-                prompt_();
+                prompt_(); return;
+            }
+
+            if (lower.startsWith('index=')) {
+                term.writeln('\x1b[2;37mSearching index=cyber_range…\x1b[0m');
+                showActivity(true);
                 return;
             }
 
-            if (lowerCmd.startsWith('index=')) {
-                term.writeln('\x1b[2;37mFound 1 event\x1b[0m');
-                term.writeln('\x1b[2;37m' + new Date().toISOString().slice(0,19).replace('T',' ') +
-                            ' FLAG-FOUND ' + (currentMissionData?.cve_id || '') + '\x1b[0m');
-                if (currentStep === 2) {
-                    term.writeln('\x1b[1;32mAttack trace located. Now write a detection rule.\x1b[0m');
-                    currentStep = 3;
-                    updateTasks(currentStep);
-                    document.getElementById('submit-report-btn').disabled = false;
-                }
-                prompt_();
-                return;
-            }
-
-            if (lowerCmd.startsWith('curl')) {
-                runCurl(cmd);
-                return;   // prompt is written when the response arrives
-            }
+            if (first === 'curl' || first === 'wget' || first === 'get') { runCurl(cmd); return; }
 
             failedAttempts++;
-            term.writeln('\x1b[2;37mCommand not recognized. Type "help" for the command list.\x1b[0m');
-            if (failedAttempts >= 4 && !hintTriggered) {
-                hintTriggered = true;
-                fetchAIHint('failure', failedAttempts);
-            }
+            term.writeln('\x1b[2;37m' + first + ': not a recognized command. This terminal speaks HTTP —\x1b[0m');
+            term.writeln('\x1b[2;37mit is not a shell on the target. Type "help" for the list.\x1b[0m');
+            if (failedAttempts >= 3 && !hintTriggered) { hintTriggered = true; fetchAIHint('failure', failedAttempts); }
             prompt_();
         }
 
         function extractPath(cmd) {
-            // strip the command word, drop quotes and simple flags, keep the URL/path
-            let arg = cmd.replace(/^\s*curl\s+/i, '').trim();
-            arg = arg.replace(/^-[A-Za-z]+\s+\S+\s*/g, '').trim();   // e.g. -X GET, -H "..."
+            let arg = cmd.replace(/^\s*(curl|wget|get)\s+/i, '').trim();
+            arg = arg.replace(/(^|\s)-[A-Za-z]+(\s+\S+)?/g, ' ').trim();
             arg = arg.replace(/^["']|["']$/g, '').trim();
             if (!arg) return null;
             if (/^https?:\/\//i.test(arg)) {
-                try { const u = new URL(arg); return u.pathname + (u.search || ''); }
-                catch (e) { return null; }
+                try { const u = new URL(arg); return u.pathname + (u.search || ''); } catch (e) { return null; }
             }
             return arg.startsWith('/') ? arg : '/' + arg;
         }
@@ -1234,60 +1265,68 @@
             const path = extractPath(cmd);
             if (!path) {
                 term.writeln('\x1b[2;37mUsage: curl "/endpoint?param=value"\x1b[0m');
-                prompt_();
-                return;
+                prompt_(); return;
             }
-
             commandRunning = true;
             currentTargetPath = path;
             term.writeln('\x1b[2;37m> GET ' + path + '\x1b[0m');
 
-            const url = API_BASE + '/missions/' + currentMissionId +
-                        '/proxy?path=' + encodeURIComponent(path);
-
-            fetch(url)
+            fetch(API_BASE + '/missions/' + currentMissionId + '/proxy?path=' + encodeURIComponent(path))
                 .then(r => r.json())
                 .then(data => {
                     if (data.error) {
                         term.writeln('\x1b[1;31mcurl: ' + data.error + '\x1b[0m');
-                        failedAttempts++;
-                        return;
+                        failedAttempts++; return;
                     }
                     term.writeln('\x1b[2;37mHTTP ' + data.status + '\x1b[0m');
-
-                    const body = (data.body || '');
-                    // print the response, tags stripped so HTML doesn't drown the terminal
-                    body.replace(/<[^>]+>/g, '')
-                        .split('\n')
-                        .map(l => l.trim())
-                        .filter(Boolean)
-                        .slice(0, 25)
+                    const body = data.body || '';
+                    body.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+                        .split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim())
+                        .slice(0, 30)
                         .forEach(l => term.writeln('\x1b[2;37m' + l + '\x1b[0m'));
 
-                    // the ONLY success condition: the real target returned the real flag
                     if (body.includes('FLAG-FOUND')) {
                         failedAttempts = 0;
                         captureFlag(path);
                     } else if (/root:x:0:0/.test(body)) {
-                        term.writeln('\x1b[1;33mYou read a system file — the traversal works. ' +
-                                    'Now aim it at the application\'s own secret file.\x1b[0m');
+                        term.writeln('\x1b[1;33mSystem file read — traversal confirmed. Now find the app\'s own secret.\x1b[0m');
+                        failedAttempts = 0;
+                    } else if (/Directory listing|Contents of/.test(body)) {
+                        term.writeln('\x1b[1;33mYou enumerated a directory. Pick a file from it and read it.\x1b[0m');
                         failedAttempts = 0;
                     } else {
                         failedAttempts++;
-                        if (failedAttempts >= 4 && !hintTriggered) {
-                            hintTriggered = true;
-                            fetchAIHint('failure', failedAttempts);
-                        }
+                        if (failedAttempts >= 3 && !hintTriggered) { hintTriggered = true; fetchAIHint('failure', failedAttempts); }
                     }
                 })
-                .catch(err => {
-                    term.writeln('\x1b[1;31mcurl failed: ' + err.message + '\x1b[0m');
-                })
-                .finally(() => {
-                    commandRunning = false;
-                    prompt_();
-                });
+                .catch(err => term.writeln('\x1b[1;31mcurl failed: ' + err.message + '\x1b[0m'))
+                .finally(() => { commandRunning = false; prompt_(); });
         }
+
+        function showActivity(blueMode) {
+            commandRunning = true;
+            fetch(API_BASE + '/missions/' + currentMissionId + '/activity')
+                .then(r => r.json())
+                .then(data => {
+                    const reqs = data.requests || [];
+                    if (!reqs.length) { term.writeln('\x1b[2;37mNo requests recorded yet.\x1b[0m'); return; }
+                    term.writeln('\x1b[2;37m' + reqs.length + ' request(s) reached the target:\x1b[0m');
+                    reqs.forEach(r => {
+                        const flag = /\.\.|%2e%2e|'|<script|;/i.test(r.path);
+                        term.writeln((flag ? '\x1b[1;33m  ! ' : '\x1b[2;37m    ') +
+                                    r.method + ' ' + r.path + '  → ' + r.status + '\x1b[0m');
+                    });
+                    if (blueMode && currentStep === 2) {
+                        term.writeln('\x1b[1;32mAttack traces located. Now write a detection rule.\x1b[0m');
+                        currentStep = 3; updateTasks(currentStep);
+                        document.getElementById('submit-report-btn').disabled = false;
+                    }
+                })
+                .catch(err => term.writeln('\x1b[1;31m' + err.message + '\x1b[0m'))
+                .finally(() => { commandRunning = false; prompt_(); });
+        }
+
+
 
         function sendCommand(cmd) {
             if (!term) return;
@@ -1499,8 +1538,9 @@
                 '<span class="hint-icon">◆</span> Click "Get Hint" if you\'re stuck.';
 
             if (term) {
-                term.clear(); term.write('\x1b[1;36m$ \x1b[0m');
-                currentInput = ''; cursorPosition = 0; commandHistory = []; historyIndex = 0;
+                currentInput = ''; cursorPosition = 0;
+                commandHistory = []; historyIndex = 0;
+                terminalWelcome();
             }
 
             if (data.app_url) {
@@ -1571,7 +1611,7 @@
             }
         }
 
-        let successfulPayload = null;
+      
 
         function captureFlag(payloadPath) {
             if (flagCaptured) return;

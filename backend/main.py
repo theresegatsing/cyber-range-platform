@@ -14,12 +14,15 @@ from ai_helper import generate_mission_brief, generate_blue_team_brief, generate
 from docker.types import LogConfig
 from container_builder import build_cve_image
 import json, queue, threading
-
+import re as _re
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI(title="Cyber Range Platform API", version="0.1.0")
+
+REQ_RE = _re.compile(r'"(GET|POST) ([^"]+?) HTTP/[\d.]+" (\d{3})')
+
 
 # ============================================================
 # DOCKER CLIENT
@@ -99,8 +102,8 @@ def _run_mission_start(vulnerability_id: int, emit):
         pass
 
     emit("image", f"Resolving vulnerable environment for {vuln['cve_id']}…")
-    image_tag, pattern = build_cve_image(docker_client, vuln['cve_id'],
-                                         vuln['description'], emit=emit)
+    image_tag, pattern, lab = build_cve_image(docker_client, vuln['cve_id'],
+                                              vuln['description'], emit=emit)
     emit("image", f"Using image {image_tag} (pattern: {pattern})")
 
     log_config = LogConfig(
@@ -148,6 +151,7 @@ def _run_mission_start(vulnerability_id: int, emit):
         "app_url": f"http://localhost:{free_port}",
         "target_ready": target_ready,
         "pattern": pattern,
+        "lab": lab,
     }
 
 
@@ -291,9 +295,23 @@ def get_blue_team_brief(cve_id: str, description: str):
     return {"brief": blue_brief}
 
 @app.get("/ai/hint")
-def get_hint(task_name: str, current_step: str, actions: str = "", cve_description: str = ""):
-    action_list = actions.split(",") if actions else []
-    return {"hint": generate_hint(task_name, current_step, action_list, cve_description)}
+def get_hint(task_name: str, current_step: str, actions: str = "",
+             cve_description: str = "", vulnerability_id: int = None):
+    action_list = [a for a in actions.split(",") if a.strip()] if actions else []
+
+    activity, lab = [], {}
+    if vulnerability_id is not None:
+        data = mission_activity(vulnerability_id)
+        activity = [f"{r['method']} {r['path']} -> {r['status']}" for r in data.get("requests", [])]
+        try:
+            container = docker_client.containers.get(f"mission-{vulnerability_id}")
+            img = docker_client.images.get(container.image.id)
+            lab = json.loads((img.labels or {}).get("cyber_range_lab") or "{}")
+        except Exception:
+            lab = {}
+
+    return {"hint": generate_hint(task_name, current_step, action_list,
+                                  cve_description, activity, lab)}
 
 @app.post("/ai/grade")
 def grade_learner_report(report: str, findings: list):
@@ -558,7 +576,24 @@ def cleanup_stale_missions():
                 print(f"⚠️  Could not remove {c.name}: {e}")
     if removed:
         print(f"🧹 Cleaned up {len(removed)} stale mission container(s): {', '.join(removed)}")
-        
+
+
+@app.get("/missions/{vulnerability_id}/activity")
+def mission_activity(vulnerability_id: int, limit: int = 40):
+    """Every HTTP request that hit this mission's container — terminal AND Target tab."""
+    try:
+        container = docker_client.containers.get(f"mission-{vulnerability_id}")
+        raw = container.logs(tail=400).decode("utf-8", errors="replace")
+    except Exception as e:
+        return {"requests": [], "error": str(e)}
+
+    reqs = []
+    for line in raw.splitlines():
+        m = REQ_RE.search(line)
+        if m:
+            reqs.append({"method": m.group(1), "path": m.group(2), "status": int(m.group(3))})
+    return {"requests": reqs[-limit:]}
+
 # ============================================================
 # ADMIN: RUN SCANNER IMPORT
 # ============================================================
