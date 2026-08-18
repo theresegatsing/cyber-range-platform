@@ -15,9 +15,11 @@ from docker.types import LogConfig
 from container_builder import build_cve_image
 import json, queue, threading
 import re as _re
+from pathlib import Path
 
 # Load environment variables
-load_dotenv()
+load_dotenv(Path(__file__).parent.parent / ".env")
+print(f"🔑 Splunk token loaded: {len(os.getenv('SPLUNK_HEC_TOKEN', ''))} chars")
 
 app = FastAPI(title="Cyber Range Platform API", version="0.1.0")
 
@@ -106,19 +108,19 @@ def _run_mission_start(vulnerability_id: int, emit):
                                               vuln['description'], emit=emit)
     emit("image", f"Using image {image_tag} (pattern: {pattern})")
 
-    log_config = LogConfig(
-                driver="splunk",
-                options={
-                    "splunk-token": os.getenv("SPLUNK_HEC_TOKEN", ""),
-                    "splunk-url": os.getenv("SPLUNK_HEC_URL", "https://172.16.25.2:8088"),
-                    "splunk-insecureskipverify": "true",
-                    "splunk-sourcetype": "docker",
-                    "splunk-index": "cyber_range",
-                    "splunk-verify-connection": "true",
-                    "splunk-format": "json",
-                    "tag": f"mission-{vulnerability_id}",
-                }
-            )
+    log_config = {
+        "Type": "splunk",
+        "Config": {
+            "splunk-token": os.getenv("SPLUNK_HEC_TOKEN", ""),
+            "splunk-url": os.getenv("SPLUNK_HEC_URL", "https://172.16.25.2:8088"),
+            "splunk-insecureskipverify": "true",
+            "splunk-sourcetype": "docker",
+            "splunk-index": "cyber_range",
+            "splunk-verify-connection": "true",
+            "splunk-format": "json",
+            "tag": f"mission-{vulnerability_id}",
+        }
+    }
     
     host_config = docker_client.api.create_host_config(
         port_bindings={80: free_port}, log_config=log_config)
