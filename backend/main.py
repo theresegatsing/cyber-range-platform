@@ -107,19 +107,19 @@ def _run_mission_start(vulnerability_id: int, emit):
     emit("image", f"Using image {image_tag} (pattern: {pattern})")
 
     log_config = LogConfig(
-        driver="splunk",
-        options={
-            "splunk-token": "bb056fbe-a182-4ff6-8612-803df97d6d24",
-            "splunk-url": "https://172.16.25.2:8088",
-            "splunk-insecureskipverify": "true",
-            "splunk-sourcetype": "docker",
-            "splunk-index": "cyber_range",
-            "splunk-verify-connection": "false",
-            "mode": "non-blocking",
-            "max-buffer-size": "2m",
-            "tag": f"mission-{vulnerability_id}"
-        }
-    )
+                driver="splunk",
+                options={
+                    "splunk-token": os.getenv("SPLUNK_HEC_TOKEN", ""),
+                    "splunk-url": os.getenv("SPLUNK_HEC_URL", "https://172.16.25.2:8088"),
+                    "splunk-insecureskipverify": "true",
+                    "splunk-sourcetype": "docker",
+                    "splunk-index": "cyber_range",
+                    "splunk-verify-connection": "true",
+                    "splunk-format": "json",
+                    "tag": f"mission-{vulnerability_id}",
+                }
+            )
+    
     host_config = docker_client.api.create_host_config(
         port_bindings={80: free_port}, log_config=log_config)
 
@@ -593,6 +593,79 @@ def mission_activity(vulnerability_id: int, limit: int = 40):
         if m:
             reqs.append({"method": m.group(1), "path": m.group(2), "status": int(m.group(3))})
     return {"requests": reqs[-limit:]}
+
+
+from fastapi import Response
+from urllib.parse import urlencode
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+SPLUNK_WEB = os.getenv("SPLUNK_WEB_URL", "http://172.16.25.2:8000")
+
+_HOP_BY_HOP = {
+    "content-encoding", "content-length", "transfer-encoding", "connection",
+    "keep-alive", "proxy-authenticate", "proxy-authorization", "te",
+    "trailers", "upgrade", "x-frame-options", "content-security-policy",
+}
+
+
+@app.api_route("/splunk-proxy/{path:path}",
+               methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"])
+async def splunk_proxy(path: str, request: Request):
+    """Reverse-proxy Splunk Web so it can be embedded same-origin in an iframe."""
+    url = f"{SPLUNK_WEB}/{path}"
+    if request.url.query:
+        url += "?" + request.url.query
+
+    fwd = {k: v for k, v in request.headers.items()
+           if k.lower() not in ("host", "content-length", "accept-encoding")}
+    body = await request.body()
+
+    try:
+        r = requests.request(
+            request.method, url,
+            headers=fwd,
+            data=body if body else None,
+            cookies=request.cookies,
+            allow_redirects=False,
+            verify=False,
+            timeout=30,
+        )
+    except Exception as e:
+        return Response(content=f"Splunk unreachable at {SPLUNK_WEB}: {e}",
+                        status_code=502, media_type="text/plain")
+
+    out = {k: v for k, v in r.headers.items() if k.lower() not in _HOP_BY_HOP}
+
+    # rewrite redirects and Set-Cookie paths back through the proxy
+    if "location" in {k.lower() for k in out}:
+        for k in list(out):
+            if k.lower() == "location":
+                loc = out.pop(k)
+                if loc.startswith(SPLUNK_WEB):
+                    loc = loc[len(SPLUNK_WEB):]
+                if loc.startswith("/"):
+                    loc = "/splunk-proxy" + loc
+                out["location"] = loc
+
+    content = r.content
+    ctype = r.headers.get("content-type", "")
+    if any(t in ctype for t in ("text/html", "javascript", "text/css", "application/json")):
+        text = content.decode("utf-8", errors="replace")
+        text = text.replace('"/en-US/', '"/splunk-proxy/en-US/')
+        text = text.replace("'/en-US/", "'/splunk-proxy/en-US/")
+        text = text.replace('"/static/', '"/splunk-proxy/static/')
+        text = text.replace("'/static/", "'/splunk-proxy/static/")
+        text = text.replace('"/api/', '"/splunk-proxy/api/')
+        text = text.replace('"/servicesNS/', '"/splunk-proxy/servicesNS/')
+        content = text.encode("utf-8")
+
+    resp = Response(content=content, status_code=r.status_code,
+                    headers=out, media_type=ctype or None)
+    for c in r.cookies:
+        resp.set_cookie(c.name, c.value, path="/splunk-proxy")
+    return resp
 
 # ============================================================
 # ADMIN: RUN SCANNER IMPORT
