@@ -1,6 +1,27 @@
 from flask import Flask
+import os
 
 app = Flask(__name__)
+
+import re as _re
+
+WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+
+@app.before_request
+def _waf():
+    if not WAF_RULE:
+        return None
+    try:
+        rx = _re.compile(WAF_RULE, _re.IGNORECASE)
+    except _re.error:
+        print("[WAF] invalid pattern, allowing traffic", flush=True)
+        return None
+    candidate = request.full_path + " " + str(request.get_data(as_text=True))[:2000]
+    if rx.search(candidate):
+        print("[WAF] BLOCKED: " + request.full_path, flush=True)
+        return "<pre>403 — request blocked by detection rule</pre>", 403
+    return None
 
 PAGE = """
 <div style="font-family:system-ui;max-width:680px;margin:40px auto;line-height:1.6">

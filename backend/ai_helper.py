@@ -455,3 +455,6 @@ def _seed_from_description(description: str) -> dict:
     if m and IDENT_RE.match(m.group(1)):
         seed["table_name"] = m.group(1)
     return seed
+
+
+

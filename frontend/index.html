@@ -526,7 +526,7 @@
         .panel-workspace .workspace-content {
             flex: 1;
             padding: 12px;
-            overflow: hidden;
+            overflow-y: auto;
             display: flex;
             flex-direction: column;
         }
@@ -566,7 +566,8 @@
             border: 1px solid #ccfbf1;
             flex-shrink: 0;
             max-height: 240px;      
-            overflow-y: auto;   
+            overflow-y: auto;  
+            max-height: 240px; 
         }
         .panel-workspace .workspace-content .blue-team-section.active { display: block; }
         .panel-workspace .workspace-content .blue-team-section .blue-brief {
@@ -593,6 +594,7 @@
             box-shadow: 0 0 0 3px rgba(13,148,136,0.1);
         }
         .panel-workspace .workspace-content .blue-team-section .submit-rule-btn { margin-top: 8px; }
+        
         .panel-workspace .workspace-content .blue-team-section .rule-result { margin-top: 8px; font-weight: 600; }
         .report-container {
             flex: 1;
@@ -834,9 +836,24 @@
                         </div>
                         <div id="blue-team-section" class="blue-team-section">
                             <div class="blue-brief" id="blue-brief-text">Blue Team brief will appear here.</div>
-                            <label style="font-weight:600;font-size:13px;">Write your detection rule:</label>
-                            <textarea id="rule-input" placeholder='e.g., alert tcp any any -> any 80 (msg:"SQL Injection"; content:"OR 1=1"; sid:1000001;)'></textarea>
-                            <button class="btn btn-primary submit-rule-btn" onclick="submitRule()">Validate Rule</button>
+
+                            <div style="background:#fff;border:1px solid #e8e0d8;border-radius:8px;padding:14px;margin:12px 0;font-size:12px;line-height:1.7;color:#475569">
+                              <strong style="color:#1e293b">How this works</strong><br>
+                              Your rule is a <strong>regular expression</strong>. It gets deployed in front of the
+                              target, and every incoming request is checked against it. If it matches, the request
+                              is blocked with a 403.<br><br>
+                              We then <strong>replay your winning attack</strong> against the patched target.
+                              If the flag still comes back, your rule was bypassed.<br><br>
+                              <strong style="color:#1e293b">Regex basics</strong><br>
+                              <code>.</code> means "any character" &mdash; to match a literal dot, escape it: <code>\.</code><br>
+                              <code>\.\./</code> matches the three characters <code>../</code><br>
+                              <code>|</code> means "or" &mdash; <code>(\.\.|%2e%2e)</code> matches either form<br>
+                              <code>/etc/</code> matches that text anywhere in the request
+                            </div>
+
+                            <label style="font-weight:600;font-size:13px;">Write a blocking rule (regex):</label>
+                            <textarea id="rule-input" placeholder="e.g.  \.\./   or   (\.\.|%2e%2e|/etc/)"></textarea>
+                            <button class="btn btn-primary submit-rule-btn" onclick="submitRule()">Deploy &amp; Test Rule</button>
                             <div class="rule-result" id="rule-result"></div>
                         </div>
                     </div>
@@ -906,6 +923,8 @@
         let commandRunning = false;
         let currentTargetPath = '/';
         let successfulPayload = null;
+
+        let detectionRule = ''
 
         
         const SPLUNK_URL = 'http://172.16.25.2:8000';
@@ -1645,32 +1664,47 @@
 
         function switchWorkspace(tab) {
             currentWorkspace = tab;
-            document.querySelectorAll('.workspace-tabs .wtab').forEach(function(el) { el.classList.remove('active'); });
-            document.getElementById('wtab-' + tab).classList.add('active');
+            document.querySelectorAll('.workspace-tabs .wtab').forEach(function (el) {
+                el.classList.remove('active');
+            });
+            var tabBtn = document.getElementById('wtab-' + tab);
+            if (tabBtn) tabBtn.classList.add('active');
+
             var terminal = document.getElementById('terminal-container');
             var target = document.getElementById('target-container');
             var splunk = document.getElementById('splunk-container');
+            var blue = document.getElementById('blue-team-section');
+
             terminal.classList.add('hidden');
             target.classList.add('hidden');
             splunk.classList.add('hidden');
+
+            if (tab === 'splunk' && flagCaptured) blue.classList.add('active');
+            else blue.classList.remove('active');
+
             if (tab === 'terminal') {
                 terminal.classList.remove('hidden');
-                setTimeout(function() { if (fitAddon) fitAddon.fit(); }, 100);
-            } else if (tab === 'target') { target.classList.remove('hidden'); }
-            else if (tab === 'splunk') {
+                setTimeout(function () { if (fitAddon) fitAddon.fit(); }, 100);
+                return;
+            }
+            if (tab === 'target') {
+                target.classList.remove('hidden');
+                return;
+            }
+            if (tab === 'splunk') {
                 splunk.classList.remove('hidden');
-                const c = splunk.querySelector('.iframe-container');
-                const base = 'index=cyber_range "mission-' + currentMissionId + '"';
+                var c = splunk.querySelector('.iframe-container');
+                var base = 'index=cyber_range "mission-' + currentMissionId + '"';
+                var markers = { path_traversal: '".."', sql_injection: '"OR"',
+                                command_injection: '";"', reflected_xss: '"<script"' };
+                var marker = markers[currentMissionData && currentMissionData.pattern] || '';
+                var attack = marker ? base + ' ' + marker : base;
+                var mk = function (q) {
+                    return SPLUNK_URL + '/en-US/app/search/search?q=' +
+                        encodeURIComponent('search ' + q) + '&earliest=-24h&latest=now';
+                };
 
-                const marker = { path_traversal: '".."', sql_injection: '"OR"',
-                                command_injection: '";"', reflected_xss: '"<script"' }
-                            [currentMissionData?.pattern] || '';
-                const attack = marker ? base + ' ' + marker : base;
-
-                const mk = q => SPLUNK_URL + '/en-US/app/search/search?q=' +
-                                encodeURIComponent('search ' + q) + '&earliest=-24h&latest=now';
-
-                let html =
+                var html =
                     '<div style="padding:28px;font-size:14px;line-height:1.7">' +
                     '<h3 style="margin-bottom:10px;color:#1e293b">Blue Team: log investigation</h3>' +
                     '<p style="color:#475569">All activity from your target container:</p>' +
@@ -1690,7 +1724,17 @@
                         'style="display:inline-block;text-decoration:none">Open filtered search</a>';
                 }
 
-                c.innerHTML = html + '</div>';
+                html += '<p style="color:#0d9488;margin-top:20px;font-weight:600;cursor:pointer" ' +
+                        'onclick="scrollToRule()">&darr; Write your blocking rule below</p></div>';
+
+                c.innerHTML = html;
+
+                setTimeout(function () {
+                    var b = document.getElementById('blue-team-section');
+                    if (b && b.classList.contains('active')) {
+                        b.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }, 300);
             }
         }
 
@@ -1716,7 +1760,6 @@
             document.getElementById('submit-report-btn').disabled = false;
 
             var blueSection = document.getElementById('blue-team-section');
-            blueSection.classList.add('active');
             var blueBriefText = currentMissionData?.blue_team_brief ||
                 'Investigate the attack traces in the Splunk logs and write a detection rule to prevent future exploitation.';
             document.getElementById('blue-brief-text').textContent = blueBriefText;
@@ -1741,31 +1784,73 @@
             }, 2500);
         }
 
+
+        function scrollToRule() {
+            const b = document.getElementById('blue-team-section');
+            if (b) b.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const i = document.getElementById('rule-input');
+            if (i) setTimeout(() => i.focus(), 400);
+        }
+
+
         function submitRule() {
-            var input = document.getElementById('rule-input');
-            var result = document.getElementById('rule-result');
-            var rule = input.value.trim();
+            const input = document.getElementById('rule-input');
+            const result = document.getElementById('rule-result');
+            const rule = input.value.trim();
+
             if (!rule) {
-                result.textContent = 'Please write a detection rule.';
                 result.style.color = '#ef4444';
+                result.textContent = 'Write a rule first.';
                 return;
             }
-            if (rule.toLowerCase().includes('sql') || rule.toLowerCase().includes('or 1=1') || rule.toLowerCase().includes('alert')) {
-                result.textContent = '✓ Rule validated. The attack is blocked. Proceed to submit your report.';
-                result.style.color = '#10b981';
-                currentStep = 3;
-                updateTasks(currentStep);
-                var blueSection = document.getElementById('blue-team-section');
-                blueSection.classList.remove('active');
-                document.getElementById('blue-brief-text').textContent = '';
-                document.getElementById('rule-input').value = '';
-                document.getElementById('rule-result').textContent = '';
-                showReportTemplate();
-                document.getElementById('submit-report-btn').disabled = false;
-            } else {
-                result.textContent = '✗ Rule did not block the attack. Try writing a rule that detects SQL injection patterns like "OR 1=1".';
-                result.style.color = '#f59e0b';
+            if (!successfulPayload) {
+                result.style.color = '#ef4444';
+                result.textContent = 'No recorded attack to replay — capture the flag first.';
+                return;
             }
+
+            result.style.color = '#64748b';
+            result.innerHTML = 'Redeploying target with your rule…<br>Replaying: <code>' +
+                            successfulPayload + '</code>';
+
+            fetch(API_BASE + '/missions/' + currentMissionId + '/test_rule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rule: rule, payload: successfulPayload })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    result.style.color = '#ef4444';
+                    result.textContent = data.error;
+                    return;
+                }
+                if (data.verdict === 'effective') {
+                    result.style.color = '#10b981';
+                    result.innerHTML = '✓ ' + data.message;
+                    detectionRule = rule;
+                    if (term) {
+                        term.writeln('\x1b[1;32m[WAF] Rule deployed. Replay of ' +
+                                    data.replayed + ' returned ' + data.attack_status + ' — blocked.\x1b[0m');
+                    }
+                    setTimeout(() => {
+                        currentStep = 3;
+                        updateTasks(currentStep);
+                        document.getElementById('submit-report-btn').disabled = false;
+                    }, 1500);
+                } else {
+                    result.style.color = '#f59e0b';
+                    result.innerHTML = '✗ ' + data.message;
+                    if (term && data.verdict === 'bypassed') {
+                        term.writeln('\x1b[1;31m[WAF] Replay of ' + data.replayed +
+                                    ' still succeeded — rule bypassed.\x1b[0m');
+                    }
+                }
+            })
+            .catch(err => {
+                result.style.color = '#ef4444';
+                result.textContent = 'Validation failed: ' + err.message;
+            });
         }
 
         function showReportTemplate() {
@@ -1800,8 +1885,7 @@
                 </div>
                 <div class="field-group">
                     <label>3. Detection Rule</label>
-                    <textarea id="report-rule" rows="3" class="monospace" placeholder="Write the detection rule you created."></textarea>
-                </div>
+                    <textarea id="report-rule" rows="3" class="monospace" placeholder="The rule you deployed.">${detectionRule || ''}</textarea>                </div>
                 <div class="field-group">
                     <label>4. Recommendations</label>
                     <textarea id="report-recommendations" rows="3" placeholder="Recommend actions to prevent future exploitation (patching, configuration changes, etc.)."></textarea>
@@ -1879,6 +1963,7 @@
             isMissionActive = false;
             missionStarting = false;
             successfulPayload = null;
+            detectionRule = '';
             const si = document.getElementById('splunk-iframe');
             if (si) si.src = 'about:blank';
             if (missionES) { missionES.close(); missionES = null; }

@@ -16,6 +16,7 @@ from container_builder import build_cve_image
 import json, queue, threading
 import re as _re
 from pathlib import Path
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -703,3 +704,107 @@ def run_scanner_import():
     except Exception as e:
         print(f"❌ Import exception: {str(e)}")
         return {"status": "error", "message": str(e)}
+
+
+
+
+class RuleTest(BaseModel):
+    rule: str
+    payload: str
+
+
+def _recreate_with_rule(vulnerability_id: int, rule: str):
+    """Recreate the mission container with WAF_RULE set, on the same port."""
+    name = f"mission-{vulnerability_id}"
+    old = docker_client.containers.get(name)
+    image_tag = old.image.tags[0] if old.image.tags else old.image.id
+    port = old.attrs["NetworkSettings"]["Ports"]["80/tcp"][0]["HostPort"]
+
+    old.remove(force=True)
+
+    log_config = {
+        "Type": "splunk",
+        "Config": {
+            "splunk-token": os.getenv("SPLUNK_HEC_TOKEN", ""),
+            "splunk-url": os.getenv("SPLUNK_HEC_URL", "https://172.16.25.2:8088"),
+            "splunk-insecureskipverify": "true",
+            "splunk-sourcetype": "docker",
+            "splunk-index": "cyber_range",
+            "splunk-verify-connection": "true",
+            "splunk-format": "json",
+            "tag": f"mission-{vulnerability_id}",
+        },
+    }
+    host_config = docker_client.api.create_host_config(
+        port_bindings={80: int(port)}, log_config=log_config)
+
+    cid = docker_client.api.create_container(
+        image=image_tag, name=name, detach=True,
+        environment={"WAF_RULE": rule},
+        host_config=host_config)
+    docker_client.api.start(container=cid)
+    return int(port)
+
+
+@app.post("/missions/{vulnerability_id}/test_rule")
+def test_rule(vulnerability_id: int, sub: RuleTest):
+    """Redeploy the target with the learner's rule, then replay the winning payload."""
+    rule = sub.rule.strip()
+    if not rule:
+        return {"error": "No rule submitted."}
+
+    try:
+        _re.compile(rule)
+    except _re.error as e:
+        return {"blocked": False, "verdict": "invalid",
+                "message": f"That isn't a valid pattern: {e}"}
+
+    if not sub.payload:
+        return {"error": "No recorded attack to replay — capture the flag first."}
+
+    try:
+        port = _recreate_with_rule(vulnerability_id, rule)
+    except Exception as e:
+        return {"error": f"Could not redeploy target: {e}"}
+
+    if not wait_for_container_ready(port, timeout=20):
+        return {"error": "Target did not come back up after redeploy."}
+
+    # 1. replay the attack
+    try:
+        atk = requests.get(f"http://localhost:{port}{sub.payload}", timeout=8)
+        atk_body, atk_status = atk.text, atk.status_code
+    except Exception as e:
+        return {"error": f"Replay failed: {e}"}
+
+    still_works = "FLAG-FOUND" in atk_body and atk_status == 200
+
+    # 2. make sure normal traffic still passes (no over-blocking)
+    try:
+        ok = requests.get(f"http://localhost:{port}/", timeout=8)
+        legit_ok = ok.status_code == 200
+    except Exception:
+        legit_ok = False
+
+    if still_works:
+        verdict, message = "bypassed", (
+            "Your rule did not stop the attack — the exact same request still "
+            "returns the flag. Look at the payload again and find the "
+            "characteristic your pattern is missing.")
+    elif not legit_ok:
+        verdict, message = "overblocking", (
+            "The attack was stopped, but normal traffic is blocked too. A rule "
+            "that breaks the application isn't deployable — make it more specific.")
+    else:
+        verdict, message = "effective", (
+            "The attack is blocked and legitimate requests still work. "
+            "That's a deployable rule.")
+
+    return {
+        "blocked": not still_works,
+        "verdict": verdict,
+        "message": message,
+        "replayed": sub.payload,
+        "attack_status": atk_status,
+        "legit_ok": legit_ok,
+    }
