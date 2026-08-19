@@ -819,6 +819,8 @@
                         <button class="wtab active" id="wtab-terminal" onclick="switchWorkspace('terminal')">Terminal</button>
                         <button class="wtab" id="wtab-target" onclick="switchWorkspace('target')">Target</button>
                         <button class="wtab disabled" id="wtab-splunk" onclick="switchWorkspace('splunk')">Splunk</button>
+                        <button class="wtab disabled" id="wtab-report" onclick="switchWorkspace('report')">Report</button>
+
                     </div>
                     <div class="workspace-content" id="workspace-content">
                         <div id="terminal-container" style="flex:1;display:flex;flex-direction:column;">
@@ -834,6 +836,9 @@
                                 <iframe id="splunk-iframe" src="about:blank"></iframe>
                             </div>
                         </div>
+
+                        <div id="report-container" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow-y:auto;"></div>
+
                         <div id="blue-team-section" class="blue-team-section">
                             <div class="blue-brief" id="blue-brief-text">Blue Team brief will appear here.</div>
 
@@ -1164,9 +1169,8 @@
                         term.writeln('\x1b[1;32mFLAG CAPTURED! (Simulated for skip)\x1b[0m');
                     }
                     term.writeln('\x1b[1;36mStarting Blue Team phase...\x1b[0m');
-                    var blueSection = document.getElementById('blue-team-section');
-                    blueSection.classList.add('active');
-                    var blueBriefText = currentMissionData.blue_team_brief || 'Your mission is to investigate the logs from the attack in Splunk. You must locate the attack traces and write a detection rule to prevent future exploitation.';
+                    var blueBriefText = currentMissionData?.blue_team_brief ||
+                        'Investigate the attack traces in the Splunk logs and write a blocking rule.';
                     document.getElementById('blue-brief-text').textContent = blueBriefText;
                     document.getElementById('help-brief').textContent = 'Blue Team Phase: ' + blueBriefText;
                     document.getElementById('wtab-splunk').classList.remove('disabled');
@@ -1174,11 +1178,14 @@
                     currentStep = nextStep;
                     updateTasks(currentStep);
                     switchWorkspace('splunk');
-                    term.writeln('\x1b[1;36mBlue Team phase started. Investigate the logs in Splunk.\x1b[0m');
                 } else {
                     currentStep = nextStep;
                     updateTasks(currentStep);
-                    term.writeln('\x1b[1;33mAdvanced to Step ' + (currentStep+1) + '\x1b[0m');
+                    if (currentStep === 3) {
+                        document.getElementById('wtab-report').classList.remove('disabled');
+                        switchWorkspace('report');
+                    }
+                    term.writeln('\x1b[1;33mAdvanced to Step ' + (currentStep + 1) + '\x1b[0m');
                 }
             } else {
                 alert('Already at final step');
@@ -1649,16 +1656,9 @@
             });
             document.getElementById('mission-step').textContent = 'Step ' + (step+1) + ' of ' + tasks.length;
             if (step === 3) {
-                var blueSection = document.getElementById('blue-team-section');
-                blueSection.classList.remove('active');
-                document.getElementById('blue-brief-text').textContent = '';
-                document.getElementById('rule-input').value = '';
-                document.getElementById('rule-result').textContent = '';
-                var helpBrief = document.getElementById('help-brief');
-                var helpHint = document.getElementById('help-hint');
-                helpBrief.textContent = '';
-                helpHint.innerHTML = '';
-                showReportTemplate();
+                document.getElementById('blue-team-section').classList.remove('active');
+                var rt = document.getElementById('wtab-report');
+                if (rt) rt.classList.remove('disabled');
             }
         }
 
@@ -1673,11 +1673,13 @@
             var terminal = document.getElementById('terminal-container');
             var target = document.getElementById('target-container');
             var splunk = document.getElementById('splunk-container');
+            var report = document.getElementById('report-container');
             var blue = document.getElementById('blue-team-section');
 
             terminal.classList.add('hidden');
             target.classList.add('hidden');
             splunk.classList.add('hidden');
+            if (report) report.classList.add('hidden');
 
             if (tab === 'splunk' && flagCaptured) blue.classList.add('active');
             else blue.classList.remove('active');
@@ -1689,6 +1691,13 @@
             }
             if (tab === 'target') {
                 target.classList.remove('hidden');
+                return;
+            }
+            if (tab === 'report') {
+                if (report) {
+                    report.classList.remove('hidden');
+                    renderReport();
+                }
                 return;
             }
             if (tab === 'splunk') {
@@ -1780,7 +1789,7 @@
 
             // give them a beat to read the terminal before the tab flips
             setTimeout(function () {
-                if (isMissionActive && !flagCaptured === false) switchWorkspace('splunk');
+                if (isMissionActive && flagCaptured) switchWorkspace('splunk');
             }, 2500);
         }
 
@@ -1833,10 +1842,12 @@
                         term.writeln('\x1b[1;32m[WAF] Rule deployed. Replay of ' +
                                     data.replayed + ' returned ' + data.attack_status + ' — blocked.\x1b[0m');
                     }
-                    setTimeout(() => {
+                    setTimeout(function () {
                         currentStep = 3;
                         updateTasks(currentStep);
+                        document.getElementById('wtab-report').classList.remove('disabled');
                         document.getElementById('submit-report-btn').disabled = false;
+                        switchWorkspace('report');
                     }, 1500);
                 } else {
                     result.style.color = '#f59e0b';
@@ -1853,52 +1864,47 @@
             });
         }
 
-        function showReportTemplate() {
-            var workspace = document.getElementById('workspace-content');
-            var terminalContainer = document.getElementById('terminal-container');
-            var targetContainer = document.getElementById('target-container');
-            var splunkContainer = document.getElementById('splunk-container');
-            var blueSection = document.getElementById('blue-team-section');
-            terminalContainer.classList.add('hidden');
-            targetContainer.classList.add('hidden');
-            splunkContainer.classList.add('hidden');
-            blueSection.classList.remove('active');
-            var existingReport = document.getElementById('report-template');
-            if (existingReport) {
-                existingReport.remove();
+        function renderReport() {
+            var c = document.getElementById('report-container');
+            if (!c) return;
+
+            c.innerHTML =
+                '<div class="report-container">' +
+                '<h3>Final Incident Report</h3>' +
+                '<div class="field-group">' +
+                '<label>Vulnerability: <span style="font-weight:normal;color:#64748b">' +
+                ((currentMissionData && currentMissionData.cve_id) || 'N/A') + '</span></label>' +
+                '</div>' +
+                '<div class="field-group">' +
+                '<label>1. Attack Description</label>' +
+                '<textarea id="report-attack-desc" rows="3" placeholder="How was the attack executed, and what vulnerability did it exploit?"></textarea>' +
+                '</div>' +
+                '<div class="field-group">' +
+                '<label>2. Detection Method</label>' +
+                '<textarea id="report-detection" rows="3" placeholder="How was the attack detected in the logs?"></textarea>' +
+                '</div>' +
+                '<div class="field-group">' +
+                '<label>3. Blocking Rule Deployed</label>' +
+                '<textarea id="report-rule" rows="2" class="monospace">' + (detectionRule || '') + '</textarea>' +
+                '</div>' +
+                '<div class="field-group">' +
+                '<label>4. Recommendations</label>' +
+                '<textarea id="report-recommendations" rows="3" placeholder="How should this be prevented long-term — patching, input validation, configuration?"></textarea>' +
+                '</div>' +
+                '<div class="actions">' +
+                '<button class="btn btn-success" onclick="submitFinalReport()">Submit Report</button>' +
+                '<button class="btn btn-secondary" onclick="resetReportTemplate()">Clear All</button>' +
+                '</div>' +
+                '</div>';
+
+            // prefill what we already know from the mission
+            if (successfulPayload) {
+                var a = document.getElementById('report-attack-desc');
+                if (a && !a.value) {
+                    a.placeholder = 'Your successful request was: ' + successfulPayload +
+                                    '\nDescribe what it did and why it worked.';
+                }
             }
-            var reportContainer = document.createElement('div');
-            reportContainer.id = 'report-template';
-            reportContainer.className = 'report-container';
-            reportContainer.innerHTML = `
-                <h3>Final Incident Report</h3>
-                <div class="field-group">
-                    <label>Vulnerability: <span style="font-weight: normal;color:#64748b;">${currentMissionData?.cve_id || 'N/A'}</span></label>
-                </div>
-                <div class="field-group">
-                    <label>1. Attack Description</label>
-                    <textarea id="report-attack-desc" rows="3" placeholder="Describe how the attack was executed and what vulnerability was exploited."></textarea>
-                </div>
-                <div class="field-group">
-                    <label>2. Detection Method</label>
-                    <textarea id="report-detection" rows="3" placeholder="Describe how the attack was detected (logs, alerts, etc.)."></textarea>
-                </div>
-                <div class="field-group">
-                    <label>3. Detection Rule</label>
-                    <textarea id="report-rule" rows="3" class="monospace" placeholder="The rule you deployed.">${detectionRule || ''}</textarea>                </div>
-                <div class="field-group">
-                    <label>4. Recommendations</label>
-                    <textarea id="report-recommendations" rows="3" placeholder="Recommend actions to prevent future exploitation (patching, configuration changes, etc.)."></textarea>
-                </div>
-                <div class="actions">
-                    <button class="btn btn-success" onclick="submitFinalReport()">Submit Report</button>
-                    <button class="btn btn-secondary" onclick="resetReportTemplate()">Clear All</button>
-                </div>
-            `;
-            workspace.appendChild(reportContainer);
-            setTimeout(function() {
-                reportContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 100);
         }
 
         function resetReportTemplate() {
@@ -1948,15 +1954,10 @@
 
         function submitReport() {
             if (!flagCaptured) {
-                alert('You must capture the flag before submitting the report.');
+                alert('Capture the flag before submitting a report.');
                 return;
             }
-            var reportTemplate = document.getElementById('report-template');
-            if (reportTemplate) {
-                submitFinalReport();
-                return;
-            }
-            showReportTemplate();
+            switchWorkspace('report');
         }
 
         function exitMission() {
@@ -1964,6 +1965,9 @@
             missionStarting = false;
             successfulPayload = null;
             detectionRule = '';
+            document.getElementById('wtab-report').classList.add('disabled');
+            var rc = document.getElementById('report-container');
+            if (rc) rc.innerHTML = '';
             const si = document.getElementById('splunk-iframe');
             if (si) si.src = 'about:blank';
             if (missionES) { missionES.close(); missionES = null; }
