@@ -935,8 +935,10 @@
         const SPLUNK_URL = 'http://172.16.25.2:8000';
 
         document.addEventListener('DOMContentLoaded', () => {
-            loadMissions();
             initTerminal();
+            if (!restoreSession()) loadMissions();
+            setInterval(saveSession, 5000);
+            window.addEventListener('beforeunload', saveSession);
         });
 
         
@@ -1081,7 +1083,7 @@
 
             resultDiv.textContent = 'Thinking...';
             const cveDesc = currentMissionData?.description || '';
-            const url = `${API_BASE}/ai/command_suggest?goal=${encodeURIComponent(goal)}&current_step=Step ${currentStep+1}&cve_description=${encodeURIComponent(cveDesc)}`;
+            const url = `${API_BASE}/ai/command_suggest?goal=${encodeURIComponent(goal)}&current_step=Step ${currentStep+1}&cve_description=${encodeURIComponent(cveDesc)}&vulnerability_id= + currentMissionId`;
             fetch(url)
                 .then(res => res.json())
                 .then(data => { resultDiv.textContent = data.suggestion || 'Could not generate a suggestion.'; })
@@ -1198,6 +1200,8 @@
 
         function terminalWelcome() {
             const lab = currentMissionData?.lab || {};
+            const ex = currentMissionData?.explainer;
+
             term.clear();
             term.writeln('\x1b[1;36m╔═══════════════════════════════════════════════════════╗\x1b[0m');
             term.writeln('\x1b[1;36m║  ' + (currentMissionData?.cve_id || 'Mission').padEnd(51) + '║\x1b[0m');
@@ -1208,7 +1212,32 @@
             term.writeln('\x1b[2;37mThen fetch the main page:  curl "/"\x1b[0m');
             term.writeln('\x1b[2;37mType "help" for all commands. Ctrl+Shift+V or right-click to paste.\x1b[0m');
             term.writeln('');
+            if (ex) {
+                term.writeln('\x1b[1;36mVulnerability class: ' + ex.name + '\x1b[0m');
+                term.writeln('\x1b[2;37mType "what" for an explanation of how this class works.\x1b[0m');
+                term.writeln('');
+            }
             prompt_();
+        }
+
+
+        let flagPollInterval = null;
+
+        function startFlagPoll() {
+            if (flagPollInterval) clearInterval(flagPollInterval);
+            flagPollInterval = setInterval(() => {
+                if (!isMissionActive || flagCaptured) return;
+                fetch(API_BASE + '/missions/' + currentMissionId + '/flag_status')
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.flag_path && !flagCaptured) {
+                            term.writeln('');
+                            term.writeln('\x1b[1;32mFlag retrieved via the Target tab.\x1b[0m');
+                            captureFlag(d.flag_path);
+                        }
+                    })
+                    .catch(() => {});
+            }, 3000);
         }
 
         function processCommand(cmd) {
@@ -1231,8 +1260,23 @@
                 term.writeln('\x1b[2;37m  hint                    ask the AI instructor\x1b[0m');
                 term.writeln('\x1b[2;37m  index=main <terms>      search Splunk (Blue Team phase)\x1b[0m');
                 term.writeln('\x1b[2;37m  clear | next | help\x1b[0m');
+                term.writeln('\x1b[2;37m  what                    explain this vulnerability class\x1b[0m');
                 prompt_(); return;
             }
+
+            if (first === 'what' || first === 'explain') {
+                const ex = currentMissionData?.explainer;
+                if (!ex) { term.writeln('\x1b[2;37mNo explainer available.\x1b[0m'); prompt_(); return; }
+                term.writeln('\x1b[1;36m' + ex.name + '\x1b[0m');
+                term.writeln('');
+                (ex.plain.match(/.{1,68}(\s|$)/g) || [ex.plain]).forEach(l =>
+                    term.writeln('\x1b[2;37m' + l.trim() + '\x1b[0m'));
+                term.writeln('');
+                term.writeln('\x1b[2;37mLook for : ' + ex.look_for + '\x1b[0m');
+                term.writeln('\x1b[2;37mThen try : ' + ex.then_try + '\x1b[0m');
+                prompt_(); return;
+            }
+            
 
             if (first === 'hint') { requestHint(); term.writeln('\x1b[2;37mAsking the instructor — see the Help panel.\x1b[0m'); prompt_(); return; }
 
@@ -1245,12 +1289,15 @@
 
             if (first === 'open') {
                 const p = cmd.slice(4).trim() || '/';
-                const base = currentMissionData?.app_url;
-                if (!base) { term.writeln('\x1b[1;31mNo target URL.\x1b[0m'); prompt_(); return; }
+                if (!currentMissionData?.app_url) {
+                    term.writeln('\x1b[1;31mNo target URL.\x1b[0m'); prompt_(); return;
+                }
+                const path = p.startsWith('/') ? p : '/' + p;
                 const c = document.querySelector('#target-container .iframe-container');
-                c.innerHTML = '<iframe id="app-iframe" src="' + base + (p.startsWith('/') ? p : '/' + p) + '"></iframe>';
+                c.innerHTML = '<iframe id="app-iframe" src="' + API_BASE + '/missions/' +
+                              currentMissionId + '/browse?path=' + encodeURIComponent(path) + '"></iframe>';
                 switchWorkspace('target');
-                term.writeln('\x1b[2;37mOpened ' + p + ' in the Target tab.\x1b[0m');
+                term.writeln('\x1b[2;37mOpened ' + path + ' in the Target tab.\x1b[0m');
                 prompt_(); return;
             }
 
@@ -1624,7 +1671,8 @@
 
             if (data.app_url) {
                 const c = document.querySelector('#target-container .iframe-container');
-                const mount = () => c.innerHTML = '<iframe id="app-iframe" src="' + data.app_url + '"></iframe>';
+                const src = API_BASE + '/missions/' + currentMissionId + '/browse?path=/';
+                const mount = () => c.innerHTML = '<iframe id="app-iframe" src="' + src + '"></iframe>';
                 if (data.target_ready) mount();
                 else {
                     c.innerHTML = '<div style="padding:20px;color:#94a3b8;">Target still starting…</div>';
@@ -1633,6 +1681,7 @@
             }
             switchWorkspace('terminal');
             startIdleCheck();   // you defined this but never called it
+            startFlagPoll()
         }
 
         function updateTasks(step) {
@@ -2063,6 +2112,7 @@
             successfulPayload = null;
             detectionRule = '';
             lastReport = null;
+            clearSession();
             document.getElementById('wtab-report').classList.add('disabled');
             var rc = document.getElementById('report-container');
             if (rc) rc.innerHTML = '';
@@ -2071,6 +2121,7 @@
             if (missionES) { missionES.close(); missionES = null; }
             if (idleCheckInterval) clearInterval(idleCheckInterval);
             if (timerInterval) clearInterval(timerInterval);
+            if (flagPollInterval) clearInterval(flagPollInterval);
             document.getElementById('view-mission').classList.remove('active');
             document.getElementById('view-dashboard').style.display = 'flex';
             document.getElementById('tab-bar').style.display = 'flex';
@@ -2090,6 +2141,84 @@
             document.getElementById('help-brief').textContent = 'Start a mission to see the brief here.';
             currentMissionData = null;
             renderMissions();
+        }
+
+        function saveSession() {
+            if (!isMissionActive || !currentMissionId) return;
+            try {
+                sessionStorage.setItem('cr_session', JSON.stringify({
+                    missionId: currentMissionId,
+                    missionData: currentMissionData,
+                    step: currentStep,
+                    flagCaptured: flagCaptured,
+                    payload: successfulPayload,
+                    rule: detectionRule,
+                    seconds: seconds,
+                    savedAt: Date.now()
+                }));
+            } catch (e) {}
+        }
+
+        function clearSession() {
+            try { sessionStorage.removeItem('cr_session'); } catch (e) {}
+        }
+
+        function restoreSession() {
+            let s;
+            try { s = JSON.parse(sessionStorage.getItem('cr_session') || 'null'); }
+            catch (e) { return false; }
+            if (!s || !s.missionId || !s.missionData) return false;
+            if (Date.now() - (s.savedAt || 0) > 4 * 3600 * 1000) { clearSession(); return false; }
+
+            currentMissionId = s.missionId;
+            currentMissionData = s.missionData;
+            successfulPayload = s.payload || null;
+            detectionRule = s.rule || '';
+            flagCaptured = !!s.flagCaptured;
+            seconds = s.seconds || 0;
+
+            document.getElementById('view-dashboard').style.display = 'none';
+            document.getElementById('tab-bar').style.display = 'none';
+            document.getElementById('view-mission').classList.add('active');
+            document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
+            document.getElementById('help-brief').textContent = currentMissionData.red_team_brief || '';
+            isMissionActive = true;
+
+            currentStep = s.step || 0;
+            updateTasks(currentStep);
+
+            if (flagCaptured) {
+                document.getElementById('wtab-splunk').classList.remove('disabled');
+                document.getElementById('submit-report-btn').disabled = false;
+                document.getElementById('blue-brief-text').textContent =
+                    currentMissionData.blue_team_brief || '';
+            }
+            if (currentStep >= 3) document.getElementById('wtab-report').classList.remove('disabled');
+
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                seconds++;
+                document.getElementById('mission-timer').textContent =
+                    String(Math.floor(seconds / 60)).padStart(2, '0') + ':' +
+                    String(seconds % 60).padStart(2, '0');
+            }, 1000);
+
+            if (currentMissionData.app_url) {
+                const c = document.querySelector('#target-container .iframe-container');
+                c.innerHTML = '<iframe id="app-iframe" src="' + API_BASE + '/missions/' +
+                              currentMissionId + '/browse?path=/"></iframe>';
+            }
+
+            if (term) {
+                terminalWelcome();
+                term.writeln('\x1b[1;33mSession restored after reload. ' +
+                             'Command history was not preserved.\x1b[0m');
+                prompt_();
+            }
+            switchWorkspace('terminal');
+            startIdleCheck();
+            startFlagPoll();
+            return true;
         }
 
         // ============================================================

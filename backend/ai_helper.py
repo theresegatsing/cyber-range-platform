@@ -245,42 +245,64 @@ Score:
 #-----
 # generate_command_suggestion
 #-----
-def generate_command_suggestion(goal: str, current_step: str, cve_description: str = "") -> str:
-    """Suggest the exact simulated-terminal command that matches the learner's stated goal."""
+def generate_command_suggestion(goal: str, current_step: str, cve_description: str = "",
+                                lab: dict = None) -> str:
+    lab = lab or {}
+    surface = ""
+    if lab.get("endpoint"):
+        surface = (f"\nThe target exposes /{lab['endpoint']} taking a "
+                   f"'{lab.get('param_name', 'input')}' parameter. "
+                   f"A known-good value is '{lab.get('public_file', 'default')}'.")
+
     prompt = f"""
-You are helping a learner in a cybersecurity training simulator.
+You are helping a learner in a hands-on cybersecurity lab.
 
-The simulator's terminal ONLY understands this fixed set of command patterns:
-- nmap <target>              -> runs reconnaissance, reveals open ports
-- curl "<url>?id=1 OR 1=1"   -> attempts a SQL injection style request against the target
-- cat brief                  -> reprints the mission brief
-- index=main <search terms>  -> searches Splunk logs (Blue Team phase only)
-- help                       -> lists available commands
-- clear                      -> clears the terminal
+The terminal sends REAL HTTP requests to a live vulnerable container.
+Available commands:
+- nmap <target>            reconnaissance; reveals the open HTTP service
+- curl "/path?param=value" sends a real GET request and prints the response
+- source /path             prints raw HTML source, revealing form field names
+- lab                      prints the target's endpoint and parameter name
+- open /path               loads a path in the Target browser tab
+- history                  lists requests that reached the target
+- cat brief                reprints the mission brief
+- hint                     asks the instructor for guidance
+- clear, help, next
 
+Vulnerability context: {cve_description}{surface}
 The learner is on: {current_step}
-Vulnerability context: {cve_description}
-The learner describes their goal in their own words: "{goal}"
+Their stated goal: "{goal}"
 
-Based ONLY on the commands listed above, tell them the exact command to type next.
-- Give ONE command, on its own line, exactly as they should type it
-- Add one short sentence explaining what it does
-- Do NOT invent commands or flags outside the list above
-- Keep the whole response under 40 words
+Give exactly ONE command from the list above, on its own line, ready to type.
+Then one short sentence explaining what it does.
+Never invent commands or flags. Never give a complete working exploit payload —
+if they are asking how to exploit, suggest the reconnaissance step that reveals it.
+Under 40 words total.
 
 Command:
 """
-    return query_ollama(prompt)
+    return query_ollama(prompt) or 'curl "/"\nFetch the main page to see what the target exposes.'
 
-
-VULN_PATTERNS = ["sql_injection", "command_injection", "path_traversal", "reflected_xss"]
+VULN_PATTERNS = [
+    "path_traversal",
+    "nosql_injection",
+    "sql_injection",
+    "command_injection",
+    "reflected_xss",
+    "ssrf",
+    "ssti",
+    "xxe",
+    "privilege_escalation",
+    "idor",
+    "open_redirect",
+    "auth_bypass",
+]
 
 #------
 # classify vulnerability pattern
 #------
 
 def classify_vulnerability_pattern(cve_id: str, description: str) -> str:
-    """Map a CVE to the closest supported vulnerability template class, or 'unsupported' if none fit."""
     prompt = f"""
 You are classifying a CVE into ONE vulnerability category for a training simulator.
 
@@ -290,17 +312,31 @@ Description: {description}
 Choose exactly ONE from this list (respond with ONLY the exact string, nothing else):
 {', '.join(VULN_PATTERNS)}, unsupported
 
-Only pick one of the specific categories if the CVE's actual exploitation mechanism
-genuinely matches it. If the CVE is about something else entirely (auth bypass,
-deserialization, SSRF, race conditions, misconfiguration, etc. that doesn't match
-any category above), respond with exactly: unsupported
+Only pick a specific category if the CVE's actual exploitation mechanism genuinely
+matches it. Notes on the trickier ones:
+- nosql_injection is for document stores (MongoDB and similar), sql_injection for relational
+- idor is unauthorised access to another user's object by changing an identifier;
+  privilege_escalation is gaining a higher role than you were granted
+- ssrf is the server fetching a URL you supply; open_redirect is the browser being sent elsewhere
+- ssti is input evaluated as template code; reflected_xss is input rendered as markup
+
+If it's something else entirely (deserialization, race conditions, memory corruption,
+misconfiguration, cryptographic weakness), respond with exactly: unsupported
 
 Category:
 """
     response = query_ollama(prompt).strip().lower()
+
+    # exact match first — "sql_injection" is a substring of "nosql_injection"
     for pattern in VULN_PATTERNS:
+        if response == pattern:
+            return pattern
+
+    # then longest-first substring match, so the more specific name wins
+    for pattern in sorted(VULN_PATTERNS, key=len, reverse=True):
         if pattern in response:
             return pattern
+
     return "unsupported"
 
 
@@ -357,7 +393,152 @@ PATTERN_SCHEMAS = {
         },
         "hint": "param_name = the parameter reflected unsanitized into the response.",
     },
+    "ssrf": {
+        "keys": {"app_title": "URL Preview Service", "asset_name": "the fetch service",
+                 "endpoint": "fetch", "param_name": "url", "public_file": "http://example.com",
+                 "secret_file": "metadata"},
+        "hint": "param_name = the parameter accepting a URL.",
+    },
+    "privilege_escalation": {
+        "keys": {"app_title": "Account Portal", "asset_name": "the user service",
+                 "endpoint": "profile", "param_name": "role", "public_file": "user",
+                 "secret_file": "admin"},
+        "hint": "param_name = the field controlling privilege level.",
+    },
+    "idor": {
+        "keys": {"app_title": "Records Portal", "asset_name": "the records API",
+                 "endpoint": "record", "param_name": "id", "public_file": "1",
+                 "secret_file": "99"},
+        "hint": "param_name = the object identifier the user can change.",
+    },
+    "ssti": {
+        "keys": {"app_title": "Greeting Service", "asset_name": "the template renderer",
+                 "endpoint": "greet", "param_name": "name", "public_file": "world",
+                 "secret_file": "config"},
+        "hint": "param_name = the value rendered into a template.",
+    },
+    "xxe": {
+        "keys": {"app_title": "XML Import Tool", "asset_name": "the import service",
+                 "endpoint": "import", "param_name": "xml", "public_file": "<doc>hi</doc>",
+                 "secret_file": "secret.txt"},
+        "hint": "param_name = the parameter accepting XML.",
+    },
+    "open_redirect": {
+        "keys": {"app_title": "Link Router", "asset_name": "the redirect handler",
+                 "endpoint": "go", "param_name": "next", "public_file": "/home",
+                 "secret_file": "external"},
+        "hint": "param_name = the redirect destination parameter.",
+    },
+    "auth_bypass": {
+        "keys": {"app_title": "Admin Console", "asset_name": "the auth layer",
+                 "endpoint": "admin", "param_name": "token", "public_file": "guest",
+                 "secret_file": "admin"},
+        "hint": "param_name = the parameter checked for authorization.",
+    },
+    "nosql_injection": {
+        "keys": {"app_title": "User Lookup", "asset_name": "the document store",
+                 "endpoint": "find", "param_name": "username", "public_file": "john",
+                 "secret_file": "admin"},
+        "hint": "param_name = the queried field.",
+    },
+
 }
+
+PATTERN_EXPLAINERS = {
+    "path_traversal": {
+        "name": "Path Traversal",
+        "plain": "The app builds a file path from your input without checking it. "
+                 "By climbing out of the intended folder you can read files you shouldn't.",
+        "look_for": "A parameter that names a file or document.",
+        "then_try": "Feed it a path that escapes the folder, or an absolute path to a known file.",
+    },
+    "sql_injection": {
+        "name": "SQL Injection",
+        "plain": "Your input is pasted straight into a database query. Add your own SQL "
+                 "and the database runs it as if the application wrote it.",
+        "look_for": "A parameter used to look up a record.",
+        "then_try": "Break out of the quoted value and add a condition that's always true.",
+    },
+    "command_injection": {
+        "name": "Command Injection",
+        "plain": "The app runs a shell command with your input appended. Shell "
+                 "metacharacters let you chain a second command of your own.",
+        "look_for": "A parameter feeding a system utility like ping or lookup.",
+        "then_try": "End the intended command and start another one.",
+    },
+    "reflected_xss": {
+        "name": "Reflected Cross-Site Scripting",
+        "plain": "Your input is written back into the page unsanitised, so markup you "
+                 "send becomes part of the page and executes in the victim's browser.",
+        "look_for": "A parameter echoed back in the response.",
+        "then_try": "Send markup instead of plain text and see if it renders.",
+    },
+    "ssrf": {
+        "name": "Server-Side Request Forgery (SSRF)",
+        "plain": "You supply a URL and the SERVER fetches it, not your browser. Because "
+                 "the server sits inside the network, it can reach internal services you can't.",
+        "look_for": "A parameter accepting a URL or address.",
+        "then_try": "Point it inward — at the server itself or an internal address.",
+    },
+    "privilege_escalation": {
+        "name": "Privilege Escalation",
+        "plain": "The app decides what you're allowed to do based on a value you control. "
+                 "Change the value, gain the permissions.",
+        "look_for": "A parameter naming a role, level, or account type.",
+        "then_try": "Claim a higher-privileged role than the one you were given.",
+    },
+    "idor": {
+        "name": "Insecure Direct Object Reference (IDOR)",
+        "plain": "The app fetches a record by the ID you pass in, without checking the "
+                 "record belongs to you. Change the ID, read someone else's data.",
+        "look_for": "A numeric or sequential identifier in the request.",
+        "then_try": "Change the ID to one you were never shown.",
+    },
+    "ssti": {
+        "name": "Server-Side Template Injection (SSTI)",
+        "plain": "Your input is treated as template code rather than text, so the server "
+                 "evaluates it. Expressions you send get calculated and returned.",
+        "look_for": "A parameter inserted into a rendered message.",
+        "then_try": "Send an arithmetic expression in template syntax and see if it's evaluated.",
+    },
+    "xxe": {
+        "name": "XML External Entity (XXE)",
+        "plain": "XML documents can declare entities that pull in external files. A parser "
+                 "that allows this will read local files and return their contents.",
+        "look_for": "A parameter accepting XML.",
+        "then_try": "Declare an entity pointing at a local file and reference it in the document.",
+    },
+    "open_redirect": {
+        "name": "Open Redirect",
+        "plain": "The app redirects to whatever destination you supply. Attackers use it "
+                 "to make malicious links look like they come from a trusted site.",
+        "look_for": "A parameter naming where to go next.",
+        "then_try": "Supply an external destination instead of an internal path.",
+    },
+    "auth_bypass": {
+        "name": "Authentication Bypass",
+        "plain": "The check that's supposed to prove who you are can be satisfied with a "
+                 "value you can guess, forge, or simply omit.",
+        "look_for": "A token or flag the app trusts.",
+        "then_try": "Supply the privileged value, or remove the parameter entirely.",
+    },
+    "nosql_injection": {
+        "name": "NoSQL Injection",
+        "plain": "Document databases accept query operators as data. If your input becomes "
+                 "part of the query structure, you can make it match everything.",
+        "look_for": "A lookup field on a document store.",
+        "then_try": "Send a query operator instead of a plain value.",
+    },
+}
+
+
+def get_pattern_explainer(pattern: str) -> dict:
+    return PATTERN_EXPLAINERS.get(pattern, {
+        "name": "Unclassified",
+        "plain": "This vulnerability doesn't map to a lab template yet. "
+                 "Study the description and write up your analysis.",
+        "look_for": "—", "try": "—",
+    })
 
 IDENT_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
 FILE_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$')
@@ -445,23 +626,26 @@ JSON:
     parsed.update(_seed_from_description(description))   # CVE text overrides the model
     params = _sanitize(pattern, parsed)
 
-    FLAG_TEXT = {
-        "path_traversal":    "you escaped the document directory and read a protected file",
-        "sql_injection":     "you bypassed the query filter and dumped the table",
-        "command_injection": "you chained a shell command through the input",
-        "reflected_xss":     "your payload was reflected unsanitized into the response",
-    }
 
     params = _sanitize(pattern, parsed)
 
     params["cve_id"] = cve_id
     params["flag_token"] = secrets.token_hex(8)
     params["flag_reason"] = {
-        "path_traversal":    "you escaped the document directory and read a protected file",
-        "sql_injection":     "you bypassed the query filter and dumped the table",
-        "command_injection": "you chained a shell command through the input",
-        "reflected_xss":     "your payload was reflected unsanitized into the response",
+        "path_traversal":     "you escaped the document directory and read a protected file",
+        "sql_injection":      "you bypassed the query filter and dumped the table",
+        "command_injection":  "you chained a shell command through the input",
+        "reflected_xss":      "your payload was reflected unsanitized into the response",
+        "ssrf":               "you made the server fetch an internal resource on your behalf",
+        "privilege_escalation": "you claimed a role you were never granted",
+        "idor":               "you read a record belonging to someone else",
+        "ssti":               "your input was evaluated as template code by the server",
+        "xxe":                "your XML entity pulled a local file off the server",
+        "open_redirect":      "you redirected the application to an external destination",
+        "auth_bypass":        "you reached a protected area without valid credentials",
+        "nosql_injection":    "your query operator matched every document in the store",
     }.get(pattern, "exploited successfully")
+
     return params
 
 

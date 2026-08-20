@@ -1,0 +1,75 @@
+from flask import Flask, request
+import os, re as _re
+
+app = Flask(__name__)
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
+WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+
+def _flag():
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
+
+
+@app.before_request
+def _waf():
+    if not WAF_RULE:
+        return None
+    try:
+        rx = _re.compile(WAF_RULE, _re.IGNORECASE)
+    except _re.error:
+        return None
+    if rx.search(request.full_path):
+        print("[WAF] BLOCKED: " + request.full_path, flush=True)
+        return "<pre>403 — request blocked by detection rule</pre>", 403
+    return None
+
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name}. Enter a URL and the server will fetch it for you.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="{public_file}" size="52">
+  <button>Fetch</button>
+</form>
+"""
+
+INTERNAL = {{
+    "127.0.0.1:8081": "internal-admin",
+    "localhost:8081": "internal-admin",
+    "169.254.169.254": "metadata",
+}}
+
+
+@app.route('/')
+def home():
+    return PAGE
+
+
+@app.route('/{endpoint}')
+def vuln():
+    url = request.args.get('{param_name}', '{public_file}').strip()
+    low = url.lower()
+
+    # intentionally vulnerable — no allowlist, no blocking of internal addresses
+    for marker in INTERNAL:
+        if marker in low:
+            return ("<pre>Fetched " + url + "\\n\\nHTTP/1.1 200 OK\\n"
+                    "Content-Type: text/plain\\n\\n"
+                    "[internal service response]\\n" + _flag() +
+                    "</pre><hr><a href='/'>&larr; Back</a>")
+
+    if low.startswith("file://"):
+        return ("<pre>Fetched " + url + "\\n\\n[local file contents]\\n" + _flag() +
+                "</pre><hr><a href='/'>&larr; Back</a>")
+
+    if not (low.startswith("http://") or low.startswith("https://")):
+        return "<pre>Only http, https and file schemes are supported.</pre><hr><a href='/'>&larr; Back</a>"
+
+    return ("<pre>Fetched " + url + "\\n\\nHTTP/1.1 200 OK\\n\\n"
+            "&lt;html&gt;Example page content&lt;/html&gt;\\n\\n"
+            "Nothing sensitive here — this is an external site."
+            "</pre><hr><a href='/'>&larr; Back</a>")
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80)

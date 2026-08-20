@@ -1,0 +1,54 @@
+from flask import Flask, request
+import os, re as _re
+
+app = Flask(__name__)
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
+WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+
+def _flag():
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
+
+
+@app.before_request
+def _waf():
+    if not WAF_RULE:
+        return None
+    try:
+        rx = _re.compile(WAF_RULE, _re.IGNORECASE)
+    except _re.error:
+        return None
+    if rx.search(request.full_path):
+        print("[WAF] BLOCKED: " + request.full_path, flush=True)
+        return "<pre>403 — request blocked by detection rule</pre>", 403
+    return None
+
+    
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name}. Personalised greeting.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="{public_file}" size="40">
+  <button>Greet</button>
+</form>
+"""
+
+
+@app.route('/')
+def home():
+    return PAGE
+
+
+@app.route('/{endpoint}')
+def vuln():
+    name = request.args.get('{param_name}', '{public_file}')
+    # intentionally vulnerable — user input rendered as a template
+    try:
+        from flask import render_template_string
+        out = render_template_string("Hello, " + name + "!")
+    except Exception as e:
+        out = "Template error: " + str(e)
+    if "49" in out and "7" not in name.replace("7*7", ""):
+        out += "\\n\\n" + _flag()
+    return "<pre>" + out + "</pre><hr><a href='/'>&larr; Back</a>"

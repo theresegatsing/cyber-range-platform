@@ -20,6 +20,10 @@ from pydantic import BaseModel
 from typing import Optional
 from fastapi.responses import StreamingResponse as FileStream
 import io
+from fastapi.responses import HTMLResponse as HTML
+from ai_helper import get_pattern_explainer
+
+
 
 
 # Load environment variables
@@ -180,6 +184,7 @@ def _run_mission_start(vulnerability_id: int, emit):
         "app_url": f"http://localhost:{free_port}",
         "target_ready": target_ready,
         "pattern": pattern,
+        "explainer": get_pattern_explainer(pattern),
         "lab": lab,
     }
 
@@ -468,10 +473,18 @@ def score_cve(cve_id: str, description: str, cvss_score: float, is_kev: bool = F
     return {"cve": cve_id, "interestingness_score": score}
 
 @app.get("/ai/command_suggest")
-def get_command_suggestion(goal: str, current_step: str, cve_description: str = ""):
-    suggestion = generate_command_suggestion(goal, current_step, cve_description)
-    return {"suggestion": suggestion}
-
+def get_command_suggestion(goal: str, current_step: str, cve_description: str = "",
+                           vulnerability_id: int = None):
+    lab = {}
+    if vulnerability_id is not None:
+        try:
+            container = docker_client.containers.get(f"mission-{vulnerability_id}")
+            img = docker_client.images.get(container.image.id)
+            lab = json.loads((img.labels or {}).get("cyber_range_lab") or "{}")
+        except Exception:
+            lab = {}
+    return {"suggestion": generate_command_suggestion(goal, current_step, cve_description, lab)}
+    
 # ============================================================
 # MISSION MANAGEMENT
 # ============================================================
@@ -669,6 +682,9 @@ def proxy_target(vulnerability_id: int, path: str = "/"):
         path = "/" + path
     try:
         r = requests.get(f"http://localhost:{port}{path}", timeout=8)
+        st = _state(vulnerability_id)
+        st["requests"].append({"method": "GET", "path": path, "status": r.status_code})
+        st["requests"] = st["requests"][-100:]
         return {"status": r.status_code, "body": r.text[:6000]}
     except Exception as e:
         return {"error": str(e)}
@@ -724,19 +740,7 @@ def cleanup_stale_missions():
 
 @app.get("/missions/{vulnerability_id}/activity")
 def mission_activity(vulnerability_id: int, limit: int = 40):
-    """Every HTTP request that hit this mission's container — terminal AND Target tab."""
-    try:
-        container = docker_client.containers.get(f"mission-{vulnerability_id}")
-        raw = container.logs(tail=400).decode("utf-8", errors="replace")
-    except Exception as e:
-        return {"requests": [], "error": str(e)}
-
-    reqs = []
-    for line in raw.splitlines():
-        m = REQ_RE.search(line)
-        if m:
-            reqs.append({"method": m.group(1), "path": m.group(2), "status": int(m.group(3))})
-    return {"requests": reqs[-limit:]}
+    return {"requests": _state(vulnerability_id)["requests"][-limit:]}
 
 
 from fastapi import Response
@@ -949,3 +953,57 @@ def test_rule(vulnerability_id: int, sub: RuleTest):
         "attack_status": atk_status,
         "legit_ok": legit_ok,
     }
+
+
+
+MISSION_STATE = {}   # vuln_id -> {"requests": [...], "flag_path": str|None}
+
+
+def _state(vid: int):
+    return MISSION_STATE.setdefault(vid, {"requests": [], "flag_path": None})
+
+
+def _target_port(vid: int):
+    c = docker_client.containers.get(f"mission-{vid}")
+    return c.attrs["NetworkSettings"]["Ports"]["80/tcp"][0]["HostPort"]
+
+
+@app.get("/missions/{vulnerability_id}/browse", response_class=HTML)
+def browse_target(vulnerability_id: int, request: Request, path: str = "/"):
+    """Serve the target through the backend so Target-tab traffic is observable."""
+    params = dict(request.query_params)
+    params.pop("path", None)
+    real_path = params.pop("__path", path) or "/"
+    if not real_path.startswith("/"):
+        real_path = "/" + real_path
+    qs = "&".join(f"{k}={requests.utils.quote(str(v))}" for k, v in params.items())
+    full = real_path + ("?" + qs if qs else "")
+
+    try:
+        port = _target_port(vulnerability_id)
+        r = requests.get(f"http://localhost:{port}{full}", timeout=8)
+        body, status = r.text, r.status_code
+    except Exception as e:
+        return HTML(f"<pre>Target unreachable: {e}</pre>", status_code=502)
+
+    st = _state(vulnerability_id)
+    st["requests"].append({"method": "GET", "path": full, "status": status})
+    st["requests"] = st["requests"][-100:]
+
+    if "FLAG-FOUND" in body and not st["flag_path"]:
+        st["flag_path"] = full
+        print(f"🚩 Flag captured via Target tab: {full}")
+
+    base = f"/missions/{vulnerability_id}/browse"
+    # keep navigation inside the proxy
+    body = _re.sub(r'action=(["\'])(/[^"\']*)\1',
+                   lambda m: f'action="{base}"><input type="hidden" name="__path" value="{m.group(2)}"',
+                   body)
+    body = _re.sub(r'href=(["\'])(/[^"\']*)\1',
+                   lambda m: f'href="{base}?path={m.group(2)}"', body)
+    return HTML(body, status_code=status)
+
+
+@app.get("/missions/{vulnerability_id}/flag_status")
+def flag_status(vulnerability_id: int):
+    return {"flag_path": _state(vulnerability_id)["flag_path"]}

@@ -1,0 +1,55 @@
+from flask import Flask, request
+import os, re as _re
+
+app = Flask(__name__)
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
+WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+
+def _flag():
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
+
+
+@app.before_request
+def _waf():
+    if not WAF_RULE:
+        return None
+    try:
+        rx = _re.compile(WAF_RULE, _re.IGNORECASE)
+    except _re.error:
+        return None
+    if rx.search(request.full_path):
+        print("[WAF] BLOCKED: " + request.full_path, flush=True)
+        return "<pre>403 — request blocked by detection rule</pre>", 403
+    return None
+
+
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name}. Look up a record by its ID.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="{public_file}" size="40">
+  <button>Open record</button>
+</form>
+"""
+
+RECORDS = {{"1": "Routine maintenance log — nothing sensitive.",
+            "2": "Meeting notes, public.",
+            "{secret_file}": None}}
+
+
+@app.route('/')
+def home():
+    return PAGE
+
+
+@app.route('/{endpoint}')
+def vuln():
+    rid = request.args.get('{param_name}', '{public_file}').strip()
+    # intentionally vulnerable — no ownership check on the requested ID
+    if rid == "{secret_file}":
+        return "<pre>Record " + rid + " [RESTRICTED]\\n\\n" + _flag() + "</pre><hr><a href='/'>&larr; Back</a>"
+    if rid in RECORDS:
+        return "<pre>Record " + rid + ": " + RECORDS[rid] + "</pre><hr><a href='/'>&larr; Back</a>"
+    return "<pre>No record " + rid + ". Valid IDs range from 1 upward.</pre><hr><a href='/'>&larr; Back</a>"

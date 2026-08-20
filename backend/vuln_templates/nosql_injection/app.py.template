@@ -1,0 +1,77 @@
+from flask import Flask, request
+import os, re as _re
+
+app = Flask(__name__)
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
+WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+
+def _flag():
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
+
+
+@app.before_request
+def _waf():
+    if not WAF_RULE:
+        return None
+    try:
+        rx = _re.compile(WAF_RULE, _re.IGNORECASE)
+    except _re.error:
+        return None
+    if rx.search(request.full_path):
+        print("[WAF] BLOCKED: " + request.full_path, flush=True)
+        return "<pre>403 — request blocked by detection rule</pre>", 403
+    return None
+
+
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name}. Look up a user in the document store.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="{public_file}" size="46">
+  <button>Find</button>
+</form>
+<p style="color:#888;font-size:13px">Query values are passed through to the store.</p>
+"""
+
+USERS = [
+    {{"username": "{public_file}", "role": "user", "note": "Standard account."}},
+    {{"username": "carol", "role": "user", "note": "Standard account."}},
+    {{"username": "{secret_file}", "role": "admin", "note": "RESTRICTED"}},
+]
+
+
+@app.route('/')
+def home():
+    return PAGE
+
+
+@app.route('/{endpoint}')
+def vuln():
+    raw = request.args.get('{param_name}', '{public_file}').strip()
+
+    # intentionally vulnerable — operators in user input become part of the query
+    is_operator = raw.startswith("{{") or raw.startswith("[$") or "$ne" in raw or "$gt" in raw or "$regex" in raw
+
+    if is_operator:
+        lines = ["Query matched " + str(len(USERS)) + " documents:"]
+        for u in USERS:
+            lines.append("  " + u["username"] + " (" + u["role"] + ") — " + u["note"])
+        lines.append("")
+        lines.append(_flag())
+        return "<pre>" + "\\n".join(lines) + "</pre><hr><a href='/'>&larr; Back</a>"
+
+    for u in USERS:
+        if u["username"] == raw:
+            if u["role"] == "admin":
+                return ("<pre>Access to administrative documents requires elevated privileges."
+                        "</pre><hr><a href='/'>&larr; Back</a>")
+            return ("<pre>" + u["username"] + " (" + u["role"] + ") — " + u["note"] +
+                    "</pre><hr><a href='/'>&larr; Back</a>")
+
+    return "<pre>No document matched '" + raw + "'.</pre><hr><a href='/'>&larr; Back</a>"
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80)

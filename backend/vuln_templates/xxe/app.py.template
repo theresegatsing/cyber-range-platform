@@ -1,0 +1,82 @@
+from flask import Flask, request
+import os, re as _re
+
+app = Flask(__name__)
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
+WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+
+def _flag():
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
+
+
+@app.before_request
+def _waf():
+    if not WAF_RULE:
+        return None
+    try:
+        rx = _re.compile(WAF_RULE, _re.IGNORECASE)
+    except _re.error:
+        return None
+    if rx.search(request.full_path):
+        print("[WAF] BLOCKED: " + request.full_path, flush=True)
+        return "<pre>403 — request blocked by detection rule</pre>", 403
+    return None
+
+
+PAGE = """
+<h3>{app_title}</h3>
+<p style="color:#555">Asset: {asset_name}. Paste an XML document to import.</p>
+<form action="/{endpoint}">
+  <input name="{param_name}" value="{public_file}" size="60">
+  <button>Import</button>
+</form>
+<p style="color:#888;font-size:13px">The parser resolves entity declarations.</p>
+"""
+
+
+def _seed():
+    if not os.path.exists("/app/{secret_file}"):
+        with open("/app/{secret_file}", "w") as f:
+            f.write(_flag() + "\\n")
+
+
+_seed()
+
+
+@app.route('/')
+def home():
+    return PAGE
+
+
+@app.route('/{endpoint}')
+def vuln():
+    xml = request.args.get('{param_name}', '{public_file}')
+
+    # intentionally vulnerable — external entities are resolved
+    ent = _re.search(r'<!ENTITY\\s+(\\w+)\\s+SYSTEM\\s+["\\']([^"\\']+)["\\']', xml, _re.I)
+    if ent:
+        name, target = ent.group(1), ent.group(2)
+        path = target.replace("file://", "")
+        if "&" + name + ";" in xml:
+            try:
+                with open(path, "r", errors="replace") as f:
+                    content = f.read()[:1500]
+                return ("<pre>Parsed document, entity &amp;" + name + "; resolved from " +
+                        path + ":\\n\\n" + content + "</pre><hr><a href='/'>&larr; Back</a>")
+            except Exception as e:
+                return ("<pre>Entity resolution failed: " + str(e) +
+                        "</pre><hr><a href='/'>&larr; Back</a>")
+        return ("<pre>Entity declared but never referenced. Use &amp;" + name +
+                "; in the document body.</pre><hr><a href='/'>&larr; Back</a>")
+
+    if "<!DOCTYPE" in xml.upper():
+        return "<pre>DOCTYPE seen, but no SYSTEM entity declared.</pre><hr><a href='/'>&larr; Back</a>"
+
+    return ("<pre>Imported: " + xml.replace("<", "&lt;").replace(">", "&gt;") +
+            "\\n\\nDocument accepted.</pre><hr><a href='/'>&larr; Back</a>")
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80)
