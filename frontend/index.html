@@ -1918,38 +1918,135 @@
             if (recommendations) recommendations.value = '';
         }
 
-        function submitFinalReport() {
-            var attackDesc = document.getElementById('report-attack-desc')?.value || 'Not provided';
-            var detection = document.getElementById('report-detection')?.value || 'Not provided';
-            var rule = document.getElementById('report-rule')?.value || 'Not provided';
-            var recommendations = document.getElementById('report-recommendations')?.value || 'Not provided';
-            var reportData = {
-                cve_id: currentMissionData?.cve_id || 'N/A',
-                attack_description: attackDesc,
-                detection_method: detection,
-                detection_rule: rule,
-                recommendations: recommendations
+        function collectReport() {
+            return {
+                cve_id: currentMissionData?.cve_id || '',
+                pattern: currentMissionData?.pattern || '',
+                payload: successfulPayload || '',
+                attack_description: document.getElementById('report-attack-desc')?.value || '',
+                detection_method: document.getElementById('report-detection')?.value || '',
+                detection_rule: document.getElementById('report-rule')?.value || '',
+                recommendations: document.getElementById('report-recommendations')?.value || '',
+                duration_seconds: seconds
             };
-            console.log('Report submitted:', reportData);
+        }
+
+        let lastReport = null;
+
+        function submitFinalReport() {
+            const payload = collectReport();
+            const empty = ['attack_description', 'detection_method', 'recommendations']
+                          .filter(k => !payload[k].trim());
+            if (empty.length === 3) {
+                alert('Fill in at least one section before submitting.');
+                return;
+            }
+            lastReport = payload;
+
+            const c = document.getElementById('report-container');
+            const panel = document.createElement('div');
+            panel.id = 'grade-panel';
+            panel.className = 'report-container';
+            panel.style.marginTop = '16px';
+            panel.innerHTML = '<h3>Grading…</h3><p style="color:#64748b">' +
+                              'Your report is being assessed.</p>';
+            const old = document.getElementById('grade-panel');
+            if (old) old.remove();
+            c.appendChild(panel);
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
             fetch(API_BASE + '/ai/grade', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    report: attackDesc + '\n\n' + detection + '\n\n' + rule,
-                    findings: ['vulnerability', 'detection', 'rule']
-                })
+                body: JSON.stringify(payload)
             })
-            .then(res => res.json())
-            .then(data => {
-                var score = data.score || 'N/A';
-                var feedback = data.feedback || '';
-                alert('Report submitted successfully!\n\nScore: ' + score + '/100\n\nFeedback: ' + feedback);
-                exitMission();
-            })
+            .then(r => r.json())
+            .then(showGrade)
             .catch(err => {
-                alert('Report submitted successfully!\n\nMission Complete!');
-                exitMission();
+                panel.innerHTML = '<h3>Grading unavailable</h3><p style="color:#ef4444">' +
+                                  err.message + '</p>' + downloadButtonHtml();
             });
+        }
+
+        function downloadButtonHtml() {
+            return '<div class="actions" style="margin-top:16px">' +
+                   '<button class="btn btn-primary" onclick="downloadReportPdf()">Download PDF</button>' +
+                   '<button class="btn btn-secondary" onclick="exitMission()">Finish mission</button>' +
+                   '</div>';
+        }
+
+        function showGrade(data) {
+            const panel = document.getElementById('grade-panel');
+            if (!panel) return;
+            const score = data.score ?? 0;
+            const colour = score >= 75 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+            const sec = data.sections || {};
+
+            let html =
+                '<h3>Assessment</h3>' +
+                '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px">' +
+                '<span style="font-size:38px;font-weight:700;color:' + colour + '">' + score + '</span>' +
+                '<span style="color:#64748b;font-size:15px">/ 100</span></div>';
+
+            const rows = [['Attack description', sec.attack],
+                          ['Detection method', sec.detection],
+                          ['Blocking rule', sec.rule],
+                          ['Recommendations', sec.recommendations]];
+            html += '<div style="margin-bottom:14px">';
+            rows.forEach(function (r) {
+                const v = (r[1] === undefined || r[1] === null) ? '—' : r[1];
+                const pct = typeof r[1] === 'number' ? (r[1] / 25 * 100) : 0;
+                html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:13px">' +
+                        '<span style="width:150px;color:#475569">' + r[0] + '</span>' +
+                        '<span style="flex:1;height:7px;background:#e8e0d8;border-radius:4px;overflow:hidden">' +
+                        '<span style="display:block;height:100%;width:' + pct + '%;background:' + colour + '"></span></span>' +
+                        '<span style="width:52px;text-align:right;color:#1e293b;font-weight:600">' + v + ' / 25</span>' +
+                        '</div>';
+            });
+            html += '</div>';
+
+            if (data.feedback) {
+                html += '<div style="background:#f0fdfa;border-left:4px solid #0d9488;padding:14px;' +
+                        'border-radius:8px;margin-bottom:12px;font-size:13px;line-height:1.7;color:#1e293b">' +
+                        data.feedback + '</div>';
+            }
+            if ((data.strengths || []).length) {
+                html += '<p style="font-weight:600;font-size:13px;color:#065f46;margin-bottom:4px">What you did well</p>' +
+                        '<ul style="margin:0 0 12px 18px;font-size:13px;color:#475569;line-height:1.7">' +
+                        data.strengths.map(s => '<li>' + s + '</li>').join('') + '</ul>';
+            }
+            if ((data.improvements || []).length) {
+                html += '<p style="font-weight:600;font-size:13px;color:#92400e;margin-bottom:4px">Areas to improve</p>' +
+                        '<ul style="margin:0 0 12px 18px;font-size:13px;color:#475569;line-height:1.7">' +
+                        data.improvements.map(s => '<li>' + s + '</li>').join('') + '</ul>';
+            }
+
+            panel.innerHTML = html + downloadButtonHtml();
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function downloadReportPdf() {
+            const payload = lastReport || collectReport();
+            fetch(API_BASE + '/report/pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => {
+                if (!r.ok) throw new Error('PDF generation failed (' + r.status + ')');
+                return r.blob();
+            })
+            .then(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'incident-report-' + (payload.cve_id || 'mission') + '.pdf';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 2000);
+            })
+            .catch(err => alert('Could not download PDF: ' + err.message));
         }
 
         function submitReport() {
@@ -1965,6 +2062,7 @@
             missionStarting = false;
             successfulPayload = null;
             detectionRule = '';
+            lastReport = null;
             document.getElementById('wtab-report').classList.add('disabled');
             var rc = document.getElementById('report-container');
             if (rc) rc.innerHTML = '';

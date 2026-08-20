@@ -161,32 +161,55 @@ Hint:
 # ----------------------------------------------------------
 # AI FEATURE 4: Report Grading
 # ----------------------------------------------------------
-def grade_report(learner_report: str, expected_findings: list) -> dict:
-    """Grade the learner's report against expected findings."""
-    expected_text = ", ".join(expected_findings)
-    
+def grade_report(learner_report: str, expected_findings: list,
+                 cve_id: str = "", pattern: str = "",
+                 payload: str = "", rule: str = "") -> dict:
+    """Grade an incident report section by section. Never raises."""
     prompt = f"""
-You are a cybersecurity instructor grading a learner's incident report.
+You are a SOC lead grading a junior analyst's incident report.
 
-Learner's Report:
+CVE: {cve_id or 'unspecified'}
+Vulnerability class: {pattern or 'unspecified'}
+The attack they actually performed: {payload or 'not recorded'}
+The blocking rule they deployed and verified: {rule or 'none'}
+
+Their report:
 {learner_report}
 
-Expected Findings (what they should have mentioned):
-{expected_text}
+Grade four sections out of 25 each:
+1. Attack Description — do they explain the mechanism, not just restate the payload?
+2. Detection Method — do they describe how it was found in the logs?
+3. Blocking Rule — is the rule sound, and do they explain what it matches?
+4. Recommendations — do they propose a real fix (input validation, canonicalisation,
+   least privilege) rather than only the WAF rule?
 
-Score the report from 0-100 based on:
-1. Did they mention all expected findings? (70 points)
-2. Is their explanation clear and professional? (30 points)
+Be fair but not generous. A section that is empty or says "not provided" scores 0.
 
-Return ONLY JSON in this exact format:
-{{"score": 85, "feedback": "Good job, but you missed..."}}
+Return ONLY JSON:
+{{"score": 78,
+  "sections": {{"attack": 20, "detection": 18, "rule": 22, "recommendations": 18}},
+  "strengths": ["one specific thing done well"],
+  "improvements": ["one specific, actionable gap"],
+  "feedback": "two sentences of overall assessment"}}
 """
-    response = query_ollama(prompt)
-    
+    raw = query_ollama(prompt, json_mode=True)
     try:
-        return json.loads(response)
-    except:
-        return {"score": 50, "feedback": "Could not parse grade. Please review manually."}
+        m = re.search(r'\{.*\}', raw, re.S)
+        data = json.loads(m.group(0)) if m else {}
+    except Exception:
+        data = {}
+
+    if not isinstance(data, dict) or "score" not in data:
+        return {"score": 50, "sections": {}, "strengths": [], "improvements": [],
+                "feedback": "Automated grading was unavailable. Review this report manually."}
+
+    data["score"] = max(0, min(100, int(data.get("score", 50))))
+    data.setdefault("sections", {})
+    for k in ("strengths", "improvements"):
+        v = data.get(k)
+        data[k] = v if isinstance(v, list) else ([str(v)] if v else [])
+    data["feedback"] = str(data.get("feedback", ""))[:600]
+    return data
 
 # ----------------------------------------------------------
 # AI FEATURE 5: CVE Interestingness Score

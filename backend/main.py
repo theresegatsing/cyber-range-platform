@@ -17,6 +17,10 @@ import json, queue, threading
 import re as _re
 from pathlib import Path
 from pydantic import BaseModel
+from typing import Optional
+from fastapi.responses import StreamingResponse as FileStream
+import io
+
 
 # Load environment variables
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -123,13 +127,35 @@ def _run_mission_start(vulnerability_id: int, emit):
         }
     }
     
-    host_config = docker_client.api.create_host_config(
-        port_bindings={80: free_port}, log_config=log_config)
-
     emit("container", f"Starting container on port {free_port}…")
-    container_id = docker_client.api.create_container(
-        image=image_tag, host_config=host_config, name=container_name, detach=True)
-    docker_client.api.start(container=container_id)
+
+    def _create_and_start(with_logging: bool):
+        if with_logging:
+            hc = docker_client.api.create_host_config(
+                port_bindings={80: free_port}, log_config=log_config)
+        else:
+            hc = docker_client.api.create_host_config(port_bindings={80: free_port})
+        cid = docker_client.api.create_container(
+            image=image_tag, host_config=hc, name=container_name, detach=True)
+        docker_client.api.start(container=cid)
+        return cid
+
+    splunk_ok = True
+    try:
+        container_id = _create_and_start(True)
+    except Exception as e:
+        msg = str(e).lower()
+        if "logging driver" in msg or "splunk" in msg or "8088" in msg:
+            splunk_ok = False
+            emit("container", "⚠️ Splunk unreachable — starting without log forwarding. "
+                              "The Blue Team phase will have no data.")
+            try:
+                docker_client.containers.get(container_name).remove(force=True)
+            except Exception:
+                pass
+            container_id = _create_and_start(False)
+        else:
+            raise
 
     target_ready = wait_for_container_ready(free_port, emit=emit)
 
@@ -316,10 +342,125 @@ def get_hint(task_name: str, current_step: str, actions: str = "",
     return {"hint": generate_hint(task_name, current_step, action_list,
                                   cve_description, activity, lab)}
 
+class ReportSubmission(BaseModel):
+    cve_id: str = ""
+    pattern: str = ""
+    payload: str = ""
+    attack_description: str = ""
+    detection_method: str = ""
+    detection_rule: str = ""
+    recommendations: str = ""
+    duration_seconds: int = 0
+
+
 @app.post("/ai/grade")
-def grade_learner_report(report: str, findings: list):
-    result = grade_report(report, findings)
+def grade_learner_report(sub: ReportSubmission):
+    combined = (
+        f"1. ATTACK DESCRIPTION\n{sub.attack_description}\n\n"
+        f"2. DETECTION METHOD\n{sub.detection_method}\n\n"
+        f"3. BLOCKING RULE\n{sub.detection_rule}\n\n"
+        f"4. RECOMMENDATIONS\n{sub.recommendations}"
+    )
+    result = grade_report(combined, [], sub.cve_id, sub.pattern,
+                          sub.payload, sub.detection_rule)
+    REPORT_CACHE[sub.cve_id or "last"] = {"submission": sub.model_dump(), "grade": result}
     return result
+
+
+REPORT_CACHE = {}
+
+
+@app.post("/report/pdf")
+def report_pdf(sub: ReportSubmission):
+    """Generate a downloadable incident report PDF including AI feedback."""
+    from reportlab.lib.pagesizes import LETTER
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                    Table, TableStyle, Preformatted)
+
+    cached = REPORT_CACHE.get(sub.cve_id or "last", {})
+    grade = cached.get("grade") or grade_report(
+        f"{sub.attack_description}\n{sub.detection_method}\n"
+        f"{sub.detection_rule}\n{sub.recommendations}",
+        [], sub.cve_id, sub.pattern, sub.payload, sub.detection_rule)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=LETTER,
+                            leftMargin=0.9*inch, rightMargin=0.9*inch,
+                            topMargin=0.9*inch, bottomMargin=0.9*inch,
+                            title=f"Incident Report — {sub.cve_id}")
+    ss = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=ss["Heading1"], fontSize=17,
+                        textColor=colors.HexColor("#0d9488"), spaceAfter=4)
+    h2 = ParagraphStyle("h2", parent=ss["Heading2"], fontSize=12,
+                        textColor=colors.HexColor("#1e293b"), spaceBefore=14, spaceAfter=6)
+    body = ParagraphStyle("body", parent=ss["BodyText"], fontSize=10, leading=15)
+    mono = ParagraphStyle("mono", parent=ss["Code"], fontSize=9,
+                          backColor=colors.HexColor("#f1f5f9"), leading=13)
+
+    def esc(t):
+        return (str(t or "Not provided")
+                .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+    story = [Paragraph("Incident Report", h1),
+             Paragraph(f"{esc(sub.cve_id)} &mdash; "
+                       f"{esc(sub.pattern).replace('_', ' ').title()}", body),
+             Paragraph(datetime.now().strftime("Generated %d %B %Y at %H:%M"), body),
+             Spacer(1, 14)]
+
+    sec = grade.get("sections", {}) or {}
+    rows = [["Section", "Score"],
+            ["Attack description", f"{sec.get('attack', '—')} / 25"],
+            ["Detection method", f"{sec.get('detection', '—')} / 25"],
+            ["Blocking rule", f"{sec.get('rule', '—')} / 25"],
+            ["Recommendations", f"{sec.get('recommendations', '—')} / 25"],
+            ["Overall", f"{grade.get('score', 0)} / 100"]]
+    t = Table(rows, colWidths=[3.6*inch, 1.4*inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d9488")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f0fdfa")),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("PADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story += [t, Spacer(1, 6)]
+
+    story += [Paragraph("Assessor feedback", h2),
+              Paragraph(esc(grade.get("feedback")), body)]
+    if grade.get("strengths"):
+        story.append(Paragraph("<b>Strengths</b>", body))
+        for s in grade["strengths"]:
+            story.append(Paragraph("&bull; " + esc(s), body))
+    if grade.get("improvements"):
+        story.append(Paragraph("<b>Areas to improve</b>", body))
+        for s in grade["improvements"]:
+            story.append(Paragraph("&bull; " + esc(s), body))
+
+    if sub.payload:
+        story += [Paragraph("Verified exploit", h2),
+                  Preformatted(f"GET {sub.payload}", mono)]
+
+    story += [Paragraph("1. Attack description", h2), Paragraph(esc(sub.attack_description), body),
+              Paragraph("2. Detection method", h2), Paragraph(esc(sub.detection_method), body),
+              Paragraph("3. Blocking rule deployed", h2), Preformatted(str(sub.detection_rule or "None"), mono),
+              Paragraph("4. Recommendations", h2), Paragraph(esc(sub.recommendations), body)]
+
+    if sub.duration_seconds:
+        story += [Spacer(1, 12),
+                  Paragraph(f"Time on mission: {sub.duration_seconds // 60}m "
+                            f"{sub.duration_seconds % 60}s", body)]
+
+    doc.build(story)
+    buf.seek(0)
+    safe = _re.sub(r'[^A-Za-z0-9\-]', '-', sub.cve_id or "report")
+    return FileStream(buf, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="incident-report-{safe}.pdf"'
+    })
+
 
 @app.get("/ai/score")
 def score_cve(cve_id: str, description: str, cvss_score: float, is_kev: bool = False):
