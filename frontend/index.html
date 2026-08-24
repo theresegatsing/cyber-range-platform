@@ -1750,10 +1750,21 @@
                 return;
             }
             grid.innerHTML = '';
+           
+
             list.forEach(vuln => {
                 const card = document.createElement('div');
                 card.className = 'mission-card';
                 const sev = vuln.severity ? vuln.severity.toLowerCase() : 'medium';
+                const id = vuln.id ?? vuln.vulnerability_id ?? null;
+
+                if (id !== null) {
+                    card.setAttribute('onclick', 'showMissionBrief(' + id + ')');
+                    card.setAttribute('title', 'Start ' + (vuln.cve_id || 'mission'));
+                } else {
+                    card.classList.add('no-id');
+                }
+
                 card.innerHTML = 
                     '<div class="card-header">' +
                         '<span class="cve-id">' + (vuln.cve_id || 'Unknown') + '</span>' +
