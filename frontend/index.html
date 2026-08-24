@@ -963,6 +963,7 @@
             term.open(wrapper);
             fitAddon.fit();
 
+
             // --- copy / paste ---
             term.attachCustomKeyEventHandler((e) => {
                 if (e.type !== 'keydown') return true;
@@ -972,16 +973,21 @@
                     term.clearSelection();
                     return false;
                 }
-                if (mod && e.key.toLowerCase() === 'v') {
-                    navigator.clipboard.readText().then(t => { if (t) pasteIntoTerminal(t); });
-                    return false;
-                }
+               
                 return true;
             });
             wrapper.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 navigator.clipboard.readText().then(t => { if (t) pasteIntoTerminal(t); });
             });
+
+           
+            
+            const ta = wrapper.querySelector('.xterm-helper-textarea');
+            console.log('helper textarea found:', !!ta);
+            wrapper.addEventListener('paste', () => console.log('paste on wrapper'), true);
+            if (ta) ta.addEventListener('paste', () => console.log('paste on textarea'), true);
+            document.addEventListener('paste', () => console.log('paste on document'), true);
 
             term.onData((data) => {
                 lastCommandTime = Date.now();
