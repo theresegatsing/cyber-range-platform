@@ -1,19 +1,26 @@
 import requests
 import json
 import secrets
+import re as _re
 
 # Ollama API endpoint
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "phi3:mini"
 
-def query_ollama(prompt: str, timeout: int = 120, json_mode: bool = False) -> str:
+def query_ollama(prompt: str, timeout: int = 120, json_mode: bool = False,
+                 stop: list = None) -> str:
     payload = {
         "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False,
         "keep_alive": "30m",
-        "options": {"num_predict": 300, "temperature": 0.4 if json_mode else 0.7},
+        "options": {
+            "num_predict": 300 if not json_mode else 300,
+            "temperature": 0.4 if json_mode else 0.7,
+        },
     }
+    if stop:
+        payload["options"]["stop"] = stop
     if json_mode:
         payload["format"] = "json"
     try:
@@ -25,90 +32,152 @@ def query_ollama(prompt: str, timeout: int = 120, json_mode: bool = False) -> st
     except Exception as e:
         print(f"[OLLAMA ERROR] {e}")
         return ""
-    
+
+BRIEF_JUNK = _re.compile(
+    r'^\s*(mission brief|brief|red team brief|blue team brief|output|response|answer)\s*:\s*',
+    _re.I)
+
+BRIEF_CUTOFF = _re.compile(
+    r'(?:\n\s*-{3,}|\n\s*(?:mission brief|write a|now generate|instructions?|'
+    r'constraints?|example format|task|note)\s*:|\n\s*\d\.\s)', _re.I)
+
+
+def _clean_brief(text: str) -> str:
+    """Strip prompt echo, leading labels, and any continuation the model invented."""
+    if not text:
+        return ""
+    t = text.strip()
+
+    # cut everything from the first sign the model started a new document
+    m = BRIEF_CUTOFF.search(t)
+    if m:
+        t = t[:m.start()]
+
+    # drop repeated leading labels ("Mission Brief: Mission Brief: ...")
+    for _ in range(3):
+        new = BRIEF_JUNK.sub("", t).strip()
+        if new == t:
+            break
+        t = new
+
+    t = t.strip().strip('"').strip()
+
+    # keep only the first paragraph
+    t = t.split("\n\n")[0].strip()
+
+    # cap at 5 sentences — the prompt asks for 4
+    sentences = _re.split(r'(?<=[.!?])\s+', t)
+    if len(sentences) > 5:
+        t = " ".join(sentences[:5])
+
+    return t
+
+def _looks_broken(text: str) -> bool:
+    if not text or len(text) < 40:
+        return True
+    low = text.lower()
+    tells = ["write a mission brief", "your task is to write", "constraints:",
+             "instructions:", "example format", "do not:", "flag name",
+             "the brief must", "now generate"]
+    return any(t in low for t in tells)
+
 # ----------------------------------------------------------
 # AI FEATURE 1: Red Team Mission Brief
 # ----------------------------------------------------------
-def generate_mission_brief(cve_id: str, description: str, cvss_score: float, asset: str = "the application") -> str:
-    """Generate a Red Team mission brief by summarizing the CVE description."""
+def generate_mission_brief(cve_id: str, description: str, cvss_score: float,
+                           asset: str = "the application") -> str:
+    """Generate a Red Team mission brief. Falls back to a deterministic brief on failure."""
 
     if cvss_score >= 9.0:
-        severity = "CRITICAL"
+        severity = "critical"
     elif cvss_score >= 7.0:
-        severity = "HIGH"
+        severity = "high"
     elif cvss_score >= 4.0:
-        severity = "MEDIUM"
+        severity = "medium"
     else:
-        severity = "LOW"
+        severity = "low"
 
-    prompt = f"""
-You are a professional cybersecurity trainer writing a MISSION BRIEF for a Red Team exercise.
+    prompt = f"""You are a cybersecurity trainer writing a mission brief for a Red Team lab exercise.
 
-Write a single paragraph that naturally integrates:
-1. What the vulnerability is (based on the description)
-2. What the attacker can do (impact)
-3. Your objective (what the learner needs to achieve)
+Vulnerability description: {description}
+Affected asset: {asset}
+Severity: {severity}
 
-DO NOT:
-- Mention the CVE number
-- Use casual language
-- Write as instructions
-- Copy the description word-for-word
-- Put the asset name in a separate sentence
-- Do not have more than 4 phrases in the whole mission brief
-- Avoid making it dramatic for nothing
+Write ONE paragraph of at most four sentences that covers, in order:
+- what the vulnerability is, in your own words
+- what an attacker gains by exploiting it
+- the learner's goal, phrased as "Your objective: ..."
 
-DO:
-- Write in second person for the vulnerability description
-- Use "Your objective" for the mission goal
-- Be specific about the impact
-- Integrate everything into one flowing paragraph of 4 phrases
+Rules:
+- Do not mention any CVE number.
+- Do not copy the description verbatim.
+- Do not write headings, lists, labels, or instructions.
+- Do not add anything after the paragraph.
+- Write plainly. No drama, no hype.
 
-Vulnerability Description: {description}
-Asset: {asset}
-CVSS Severity: {severity}
+Paragraph:"""
 
-Example format (DO NOT COPY – use as style guide):
-"The vulnerability resides in the datamodel-code-generator tool, where GraphQL Union description values can inject arbitrary Python code into generated models. Successful exploitation enables attackers to execute malicious code when the models are imported, leading to information exfiltration, credential dumping, and lateral movement across the network. Your objective: exploit the vulnerability to capture the flag."
+    for attempt in range(2):
+        raw = query_ollama(prompt, stop=[
+            "\n\n", "Paragraph:", "Mission Brief:", "---",
+            "Write a", "Now generate", "Rules:", "Vulnerability description:",
+            "Instructions:", "Constraints:",
+        ])
+        brief = _clean_brief(raw)
+        if not _looks_broken(brief):
+            return brief
+        print(f"[BRIEF] Retry {attempt + 1} for {cve_id} — model echoed the prompt")
 
-Now generate a UNIQUE mission brief for this vulnerability:
-
-Mission Brief:
-"""
-    return query_ollama(prompt)
+    # deterministic fallback — plain but always correct
+    summary = description.strip().rstrip('.')
+    if len(summary) > 220:
+        summary = summary[:220].rsplit(' ', 1)[0] + '…'
+    return (f"A {severity}-severity vulnerability affects {asset}. {summary}. "
+            f"Your objective: exploit this flaw in the lab environment and capture the flag.")
 
 # ----------------------------------------------------------
 # AI FEATURE 2: Blue Team Brief
 # ----------------------------------------------------------
-def generate_blue_team_brief(cve_id: str, description: str) -> str:
-    """Generate a Blue Team mission brief by summarizing the CVE description."""
-    
-    prompt = f"""
-You are a professional cybersecurity trainer writing a BLUE TEAM MISSION BRIEF.
+def generate_blue_team_brief(cve_id: str, description: str,
+                             asset: str = "the application") -> str:
+    """Generate a Blue Team mission brief. Falls back to a deterministic brief on failure."""
 
-Write a single paragraph that:
-1. Explains what the vulnerability is
-2. States the Blue Team objective: investigate Splunk logs to find attack traces
-3. Explicitly mentions using Splunk log analysis
-4. States they must write a detection rule
+    prompt = f"""You are a cybersecurity trainer writing a Blue Team brief for a lab exercise.
 
-Vulnerability Description: {description}
+Vulnerability description: {description}
 
-IMPORTANT REQUIREMENTS:
-- MUST mention Splunk log analysis
-- MUST mention writing a detection rule
-- Be professional and clear
-- Do NOT mention the CVE number
-- Do not have more than 4 phrases in the whole mission brief
+Write ONE paragraph of at most four sentences that covers, in order:
+- what the attacker exploited, in your own words
+- the goal: investigate the Splunk logs to locate the attack traces
+- the deliverable: write a rule that would block or detect this technique
 
-Example format (DO NOT COPY – use as style guide):
-"Your mission is to investigate the Splunk logs from the stored XSS attack on OpenCTI. You must locate the attack traces in the Splunk logs and write a detection rule to prevent session theft. Use Splunk search queries to identify the malicious payload and the affected users."
+Rules:
+- Mention Splunk log analysis explicitly.
+- Mention writing the rule explicitly.
+- Do not mention any CVE number.
+- Do not copy the description verbatim.
+- Do not write headings, lists, labels, or instructions.
+- Do not add anything after the paragraph.
+- Write plainly. No drama, no hype.
 
-Now generate a UNIQUE Blue Team mission brief for this vulnerability that includes Splunk log analysis:
+Paragraph:"""
 
-Blue Team Brief:
-"""
-    return query_ollama(prompt)
+    for attempt in range(2):
+        raw = query_ollama(prompt, stop=[
+            "\n\n", "Paragraph:", "Blue Team Brief:", "Mission Brief:", "---",
+            "Write a", "Now generate", "Rules:", "Vulnerability description:",
+            "Instructions:", "Constraints:",
+        ])
+        brief = _clean_brief(raw)
+        if not _looks_broken(brief) and "splunk" in brief.lower():
+            return brief
+        print(f"[BLUE BRIEF] Retry {attempt + 1} for {cve_id} — output rejected")
+
+    # deterministic fallback — plain but always correct
+    return (f"An attacker successfully exploited a vulnerability in {asset} and "
+            f"retrieved data they should not have been able to reach. Your objective: "
+            f"search the Splunk logs to find the requests that carried out the attack, "
+            f"then write a rule that would block that technique in future.")
 
 # ----------------------------------------------------------
 # AI FEATURE 3: Smart Hint (FIXED - Uses CVE Description)
@@ -154,23 +223,47 @@ Give ONE specific next action, based on what they have ALREADY tried.
 
 Hint:
 """
-    return query_ollama(prompt) or "Explore the target's main page, then try altering the parameter value."
+    return _clean_brief(query_ollama(
+            prompt,
+            stop=["\n\n", "Mission Brief:", "---", "Write a", "Now generate",
+                  "Example format", "Vulnerability Description:", "Instructions:"]
+        )) or "Explore the target's main page, then try altering the parameter value."
 
 
 
 # ----------------------------------------------------------
 # AI FEATURE 4: Report Grading
 # ----------------------------------------------------------
-def grade_report(learner_report: str, expected_findings: list,
-                 cve_id: str = "", pattern: str = "",
-                 payload: str = "", rule: str = "") -> dict:
-    """Grade an incident report section by section. Never raises."""
+def grade_report(attack: str = "", detection: str = "", rule: str = "",
+                 recommendations: str = "", cve_id: str = "", pattern: str = "",
+                 payload: str = "") -> dict:
+    """Grade an incident report section by section. Empty sections score zero."""
+
+    provided = {
+        "attack": len(attack.strip()) >= 15,
+        "detection": len(detection.strip()) >= 15,
+        "rule": len(rule.strip()) >= 3,
+        "recommendations": len(recommendations.strip()) >= 15,
+    }
+
+    if not any(provided.values()):
+        return {"score": 0, "sections": {k: 0 for k in provided},
+                "strengths": [], "improvements": ["Complete the report before submitting."],
+                "feedback": "No sections were completed."}
+
+    learner_report = (
+        f"1. ATTACK DESCRIPTION\n{attack or '(not provided)'}\n\n"
+        f"2. DETECTION METHOD\n{detection or '(not provided)'}\n\n"
+        f"3. BLOCKING RULE\n{rule or '(not provided)'}\n\n"
+        f"4. RECOMMENDATIONS\n{recommendations or '(not provided)'}"
+    )
+
     prompt = f"""
 You are a SOC lead grading a junior analyst's incident report.
 
 CVE: {cve_id or 'unspecified'}
 Vulnerability class: {pattern or 'unspecified'}
-The attack they actually performed: {payload or 'not recorded'}
+The attack they performed: {payload or 'not recorded'}
 The blocking rule they deployed and verified: {rule or 'none'}
 
 Their report:
@@ -183,7 +276,8 @@ Grade four sections out of 25 each:
 4. Recommendations — do they propose a real fix (input validation, canonicalisation,
    least privilege) rather than only the WAF rule?
 
-Be fair but not generous. A section that is empty or says "not provided" scores 0.
+Any section marked "(not provided)" scores 0.
+Be fair but not generous.
 
 Return ONLY JSON:
 {{"score": 78,
@@ -194,21 +288,35 @@ Return ONLY JSON:
 """
     raw = query_ollama(prompt, json_mode=True)
     try:
-        m = re.search(r'\{.*\}', raw, re.S)
+        m = _re.search(r'\{.*\}', raw, _re.S)
         data = json.loads(m.group(0)) if m else {}
     except Exception:
         data = {}
 
     if not isinstance(data, dict) or "score" not in data:
-        return {"score": 50, "sections": {}, "strengths": [], "improvements": [],
+        base = 60 if all(provided.values()) else 40
+        data = {"score": base, "sections": {}, "strengths": [], "improvements": [],
                 "feedback": "Automated grading was unavailable. Review this report manually."}
 
-    data["score"] = max(0, min(100, int(data.get("score", 50))))
-    data.setdefault("sections", {})
+    sections = data.get("sections") or {}
+    for key, filled in provided.items():
+        try:
+            val = int(sections.get(key, 0))
+        except Exception:
+            val = 0
+        sections[key] = 0 if not filled else max(0, min(25, val))
+
+    data["sections"] = sections
+    data["score"] = min(int(data.get("score", 0) or 0), sum(sections.values()))
+    data["score"] = max(0, min(100, data["score"]))
     for k in ("strengths", "improvements"):
         v = data.get(k)
         data[k] = v if isinstance(v, list) else ([str(v)] if v else [])
     data["feedback"] = str(data.get("feedback", ""))[:600]
+
+    missing = [k for k, f in provided.items() if not f]
+    if missing:
+        data["improvements"].insert(0, "Incomplete sections scored zero: " + ", ".join(missing) + ".")
     return data
 
 # ----------------------------------------------------------

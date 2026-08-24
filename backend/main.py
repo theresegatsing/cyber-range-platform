@@ -360,14 +360,15 @@ class ReportSubmission(BaseModel):
 
 @app.post("/ai/grade")
 def grade_learner_report(sub: ReportSubmission):
-    combined = (
-        f"1. ATTACK DESCRIPTION\n{sub.attack_description}\n\n"
-        f"2. DETECTION METHOD\n{sub.detection_method}\n\n"
-        f"3. BLOCKING RULE\n{sub.detection_rule}\n\n"
-        f"4. RECOMMENDATIONS\n{sub.recommendations}"
+    result = grade_report(
+        attack=sub.attack_description,
+        detection=sub.detection_method,
+        rule=sub.detection_rule,
+        recommendations=sub.recommendations,
+        cve_id=sub.cve_id,
+        pattern=sub.pattern,
+        payload=sub.payload,
     )
-    result = grade_report(combined, [], sub.cve_id, sub.pattern,
-                          sub.payload, sub.detection_rule)
     REPORT_CACHE[sub.cve_id or "last"] = {"submission": sub.model_dump(), "grade": result}
     return result
 
@@ -386,11 +387,13 @@ def report_pdf(sub: ReportSubmission):
                                     Table, TableStyle, Preformatted)
 
     cached = REPORT_CACHE.get(sub.cve_id or "last", {})
-    grade = cached.get("grade") or grade_report(
-        f"{sub.attack_description}\n{sub.detection_method}\n"
-        f"{sub.detection_rule}\n{sub.recommendations}",
-        [], sub.cve_id, sub.pattern, sub.payload, sub.detection_rule)
 
+
+    grade = cached.get("grade") or grade_report(
+        attack=sub.attack_description, detection=sub.detection_method,
+        rule=sub.detection_rule, recommendations=sub.recommendations,
+        cve_id=sub.cve_id, pattern=sub.pattern, payload=sub.payload)
+    
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=LETTER,
                             leftMargin=0.9*inch, rightMargin=0.9*inch,

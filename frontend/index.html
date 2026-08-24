@@ -1032,6 +1032,12 @@
         
         // add this at top level, e.g. right after fetchAIHint's closing brace:
         function requestHint() {
+            if (flagCaptured) {
+                document.getElementById('help-hint').innerHTML =
+                    '<span class="hint-icon">◆</span> Hints are Red Team only. ' +
+                    'For the Blue Team phase, read the regex guide above the rule box.';
+                return;
+            }
             fetchAIHint('manual', null);
         }
 
@@ -1588,6 +1594,8 @@
                     String(Math.floor(seconds/60)).padStart(2,'0') + ':' + String(seconds%60).padStart(2,'0');
             }, 1000);
 
+            var hb = document.getElementById('get-hint-btn');
+            if (hb) { hb.disabled = false; hb.textContent = 'Get Hint'; }
             flagCaptured = false;
             document.getElementById('blue-team-section').classList.remove('active');
             document.getElementById('rule-result').textContent = '';
@@ -1765,6 +1773,12 @@
                 }
             }
 
+            var hb = document.getElementById('get-hint-btn');
+            if (hb) {
+                hb.disabled = true;
+                hb.textContent = 'Hints — Red Team only';
+            }
+
             currentStep = 2;
             updateTasks(currentStep);
 
@@ -1874,6 +1888,9 @@
                 '<label>4. Recommendations</label>' +
                 '<textarea id="report-recommendations" rows="3" placeholder="How should this be prevented long-term — patching, input validation, configuration?"></textarea>' +
                 '</div>' +
+                '<div id="report-validation" style="display:none;background:#fef2f2;' +
+                'border-left:4px solid #ef4444;padding:12px;border-radius:0;' +
+                'font-size:13px;color:#991b1b;margin-bottom:12px"></div>' +
                 '<div class="actions">' +
                 '<button class="btn btn-success" onclick="submitFinalReport()">Submit Report</button>' +
                 '<button class="btn btn-secondary" onclick="resetReportTemplate()">Clear All</button>' +
@@ -1888,6 +1905,14 @@
                                     '\nDescribe what it did and why it worked.';
                 }
             }
+
+            ['report-attack-desc', 'report-detection', 'report-rule',
+             'report-recommendations'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.addEventListener('input', function () {
+                    this.style.borderColor = '#e8e0d8';
+                });
+            });
         }
 
         function resetReportTemplate() {
@@ -1918,12 +1943,39 @@
 
         function submitFinalReport() {
             const payload = collectReport();
-            const empty = ['attack_description', 'detection_method', 'recommendations']
-                          .filter(k => !payload[k].trim());
-            if (empty.length === 3) {
-                alert('Fill in at least one section before submitting.');
+
+            const fields = [
+                ['attack_description', 'report-attack-desc', 'Attack description'],
+                ['detection_method', 'report-detection', 'Detection method'],
+                ['detection_rule', 'report-rule', 'Blocking rule'],
+                ['recommendations', 'report-recommendations', 'Recommendations'],
+            ];
+
+            let firstBad = null;
+            const missing = [];
+            fields.forEach(function (f) {
+                const el = document.getElementById(f[1]);
+                const val = (payload[f[0]] || '').trim();
+                const bad = val.length < 15;
+                if (el) el.style.borderColor = bad ? '#ef4444' : '#e8e0d8';
+                if (bad) {
+                    missing.push(f[2]);
+                    if (!firstBad) firstBad = el;
+                }
+            });
+
+            const warn = document.getElementById('report-validation');
+            if (missing.length) {
+                if (warn) {
+                    warn.style.display = 'block';
+                    warn.textContent = 'Complete these sections before submitting (at least a ' +
+                                       'sentence each): ' + missing.join(', ') + '.';
+                }
+                if (firstBad) { firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' }); firstBad.focus(); }
                 return;
             }
+            if (warn) warn.style.display = 'none';
+
             lastReport = payload;
 
             const c = document.getElementById('report-container');
@@ -2119,6 +2171,12 @@
             document.getElementById('mission-title').textContent = currentMissionData.cve_id || 'Mission';
             document.getElementById('help-brief').textContent = currentMissionData.red_team_brief || '';
             isMissionActive = true;
+
+            var hb = document.getElementById('get-hint-btn');
+            if (hb) {
+                hb.disabled = !!flagCaptured;
+                hb.textContent = flagCaptured ? 'Hints — Red Team only' : 'Get Hint';
+            }
 
             currentStep = s.step || 0;
             updateTasks(currentStep);

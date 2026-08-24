@@ -1,12 +1,19 @@
 from flask import Flask, request
 import subprocess
 import os
+import re as _re
 
 app = Flask(__name__)
 
-import re as _re
-
 WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+BASE_COMMAND = "{base_command}"
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
+
+
+def _flag():
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
 
 
 @app.before_request
@@ -24,14 +31,12 @@ def _waf():
         return "<pre>403 — request blocked by detection rule</pre>", 403
     return None
 
-BASE_COMMAND = "{base_command}"
-FLAG = "{flag_message}"
-
 
 def _seed():
-    if not os.path.exists("/app/secret.txt"):
-        with open("/app/secret.txt", "w") as f:
-            f.write(FLAG + "\n")
+    with open("/app/secret.txt", "w") as f:
+        f.write(_flag() + "\n")
+    print("[LAB] secret file: /app/secret.txt", flush=True)
+    print("[LAB] base command: " + BASE_COMMAND, flush=True)
 
 
 _seed()
@@ -43,6 +48,7 @@ PAGE = """
   <input name="{param_name}" value="127.0.0.1" size="44">
   <button>Run</button>
 </form>
+<p style="color:#888;font-size:13px">Diagnostics output is returned verbatim.</p>
 """
 
 
@@ -60,6 +66,8 @@ def vuln():
         out = subprocess.run(cmd, shell=True, capture_output=True,
                              text=True, timeout=8)
         body = (out.stdout or "") + (out.stderr or "")
+        if not body.strip():
+            body = "(no output)"
     except subprocess.TimeoutExpired:
         body = "Command timed out."
     except Exception as e:

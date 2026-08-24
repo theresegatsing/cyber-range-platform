@@ -1,11 +1,20 @@
 from flask import Flask, request
 import os
+import re as _re
 
 app = Flask(__name__)
 
-import re as _re
-
 WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
+
+PAYLOAD_MARKERS = ["<script", "onerror=", "onload=", "onmouseover=",
+                   "javascript:", "<img", "<svg", "<iframe"]
+
+
+def _flag():
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
 
 
 @app.before_request
@@ -23,16 +32,17 @@ def _waf():
         return "<pre>403 — request blocked by detection rule</pre>", 403
     return None
 
-FLAG = "{flag_message}"
-PAYLOAD_MARKERS = ["<script", "onerror=", "onload=", "javascript:", "<img", "<svg"]
+
+print("[LAB] reflected parameter: {param_name} on /{endpoint}", flush=True)
 
 PAGE = """
 <h3>{app_title}</h3>
-<p style="color:#555">Asset: {asset_name}.</p>
+<p style="color:#555">Asset: {asset_name}. Your search term is shown back to you.</p>
 <form action="/{endpoint}">
   <input name="{param_name}" value="hello" size="44">
   <button>Search</button>
 </form>
+<p style="color:#888;font-size:13px">Results are rendered without escaping.</p>
 """
 
 
@@ -46,10 +56,16 @@ def vuln():
     value = request.args.get('{param_name}', '')
     lowered = value.lower()
     reflected = any(m in lowered for m in PAYLOAD_MARKERS)
+
     # intentionally vulnerable — user input written straight into the response
-    body = "<h3>{app_title}</h3><p>Results for: " + value + "</p>"
+    body = ("<h3>{app_title}</h3>"
+            "<p>Results for: " + value + "</p>"
+            "<p style='color:#888'>No matching records.</p>")
+
     if reflected:
-        body += "<pre>" + FLAG + "</pre>"
+        body += "<pre>" + _flag() + "</pre>"
+        print("[XSS] payload reflected: " + value[:200], flush=True)
+
     return body + "<hr><a href='/'>&larr; Back</a>"
 
 

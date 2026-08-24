@@ -1,12 +1,22 @@
 from flask import Flask, request
 import sqlite3
 import os
+import re as _re
 
 app = Flask(__name__)
 
-import re as _re
-
 WAF_RULE = os.environ.get("WAF_RULE", "").strip()
+
+DB = "/app/lab.db"
+TABLE = "{table_name}"
+COLUMNS = {column_names}
+ROWS = ["{sample_row_1}", "{sample_row_2}"]
+FLAG_TOKEN = "{flag_token}"
+FLAG_REASON = "{flag_reason}"
+
+
+def _flag():
+    return "FLAG" + "-FOUND: " + "{cve_id}" + " [" + FLAG_TOKEN + "] — " + FLAG_REASON + "."
 
 
 @app.before_request
@@ -23,13 +33,6 @@ def _waf():
         print("[WAF] BLOCKED: " + request.full_path, flush=True)
         return "<pre>403 — request blocked by detection rule</pre>", 403
     return None
-    
-
-DB = "/app/lab.db"
-TABLE = "{table_name}"
-COLUMNS = {column_names}
-ROWS = ["{sample_row_1}", "{sample_row_2}"]
-FLAG = "{flag_message}"
 
 
 def _seed():
@@ -44,6 +47,8 @@ def _seed():
         conn.execute("INSERT INTO " + TABLE + " VALUES (" + marks + ")", vals)
     conn.commit()
     conn.close()
+    print("[LAB] table: " + TABLE + " (" + ", ".join(COLUMNS) + ")", flush=True)
+    print("[LAB] rows seeded: " + str(len(ROWS)), flush=True)
 
 
 _seed()
@@ -55,6 +60,7 @@ PAGE = """
   <input name="{param_name}" value="1" size="44">
   <button>Look up</button>
 </form>
+<p style="color:#888;font-size:13px">The query is echoed back with the results.</p>
 """
 
 
@@ -74,14 +80,16 @@ def vuln():
         rows = conn.execute(query).fetchall()
         conn.close()
     except Exception as e:
-        return f"<pre>SQL error: {{e}}\nQuery: {{query}}</pre><hr><a href='/'>&larr; Back</a>"
+        # verbose SQL errors leak the query structure
+        return ("<pre>SQL error: " + str(e) + "\nQuery: " + query +
+                "</pre><hr><a href='/'>&larr; Back</a>")
 
     out = "<pre>Query: " + query + "\n\n"
     for r in rows:
         out += str(r) + "\n"
     out += "\n" + str(len(rows)) + " row(s) returned\n"
-    if len(rows) > 1:
-        out += "\n" + FLAG + "\n"
+    if len(rows) > len(ROWS) - 1 and len(rows) > 1:
+        out += "\n" + _flag() + "\n"
     return out + "</pre><hr><a href='/'>&larr; Back</a>"
 
 
