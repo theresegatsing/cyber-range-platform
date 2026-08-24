@@ -21,16 +21,22 @@ def import_vulnerabilities():
 
     if not vulnerabilities:
         print("[INFO] No new vulnerabilities found.")
+        print("PROGRESS done=0 total=0", flush=True)
         return
 
-    print(f"[INFO] Found {len(vulnerabilities)} vulnerabilities in the scan window.")
+    total = len(vulnerabilities)
+    print(f"[INFO] Found {total} vulnerabilities in the scan window.")
+    print(f"PROGRESS done=0 total={total}", flush=True)
 
-    for vuln in vulnerabilities:
+    for i, vuln in enumerate(vulnerabilities, 1):
         cve_id = vuln["cve_id"]
         description = vuln["description"]
         cvss_score = vuln["cvss_score"]
         asset = vuln["asset"]
         is_kev = vuln["is_kev"]
+
+        # emit BEFORE the work, so the UI shows what's currently being processed
+        print(f"PROGRESS done={i - 1} total={total} cve={cve_id}", flush=True)
 
         print(f"\n{'='*50}")
         print(f"Processing: {cve_id}")
@@ -38,15 +44,23 @@ def import_vulnerabilities():
         existing = get_platform_vulnerability(cve_id)
 
         if existing:
-            # Already scored before — score stays static, skip the AI call.
             print(f"[SKIP-SCORE] {cve_id} already in platform (score={existing['interestingness_score']}). Just refreshing last_seen.")
             save_to_platform(cve_id, description, cvss_score, asset, is_kev, interestingness_score=None)
         else:
-            print("[AI] Scoring (new CVE)...")
-            interestingness = score_cve_interestingness(cve_id, description, cvss_score, is_kev)
-            print(f"   Interestingness Score: {interestingness}/10")
+            # cheap heuristic first — only ask the model when it's genuinely ambiguous
+            if is_kev and cvss_score >= 9.0:
+                interestingness = 10
+                print("   Interestingness Score: 10/10 (KEV + critical, no AI needed)")
+            elif cvss_score < 4.0 and not is_kev:
+                interestingness = 2
+                print("   Interestingness Score: 2/10 (low severity, no AI needed)")
+            else:
+                print("[AI] Scoring (new CVE)...")
+                interestingness = score_cve_interestingness(cve_id, description, cvss_score, is_kev)
+                print(f"   Interestingness Score: {interestingness}/10")
             save_to_platform(cve_id, description, cvss_score, asset, is_kev, interestingness)
 
+    print(f"PROGRESS done={total} total={total}", flush=True)
     print("\n[OK] Import complete.")
 # ============================================================
 # RUN FULL PIPELINE

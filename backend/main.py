@@ -1007,3 +1007,81 @@ def browse_target(vulnerability_id: int, request: Request, path: str = "/"):
 @app.get("/missions/{vulnerability_id}/flag_status")
 def flag_status(vulnerability_id: int):
     return {"flag_path": _state(vulnerability_id)["flag_path"]}
+
+
+import subprocess, sys
+
+_import_state = {"running": False, "done": 0, "total": 0, "cve": "", "listeners": []}
+
+
+@app.get("/admin/import_status")
+def import_status():
+    return {"running": _import_state["running"], "done": _import_state["done"],
+            "total": _import_state["total"], "cve": _import_state["cve"]}
+
+
+@app.get("/admin/import_stream")
+def import_stream():
+    q = queue.Queue()
+    _import_state["listeners"].append(q)
+
+    # a late joiner gets the current position immediately
+    if _import_state["running"]:
+        q.put({"stage": "progress", "done": _import_state["done"],
+               "total": _import_state["total"], "cve": _import_state["cve"]})
+
+    def broadcast(msg):
+        for lq in list(_import_state["listeners"]):
+            lq.put(msg)
+
+    def work():
+        _import_state.update(running=True, done=0, total=0, cve="")
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, "-u", "scanner_import.py"],
+                cwd=os.path.dirname(__file__),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1)
+            for line in proc.stdout:
+                line = line.rstrip()
+                print(line)
+                if line.startswith("PROGRESS"):
+                    parts = dict(p.split("=", 1) for p in line.split()[1:] if "=" in p)
+                    _import_state["total"] = int(parts.get("total", _import_state["total"]) or 0)
+                    _import_state["done"] = int(parts.get("done", 0) or 0)
+                    _import_state["cve"] = parts.get("cve", "")
+                    broadcast({"stage": "progress", "done": _import_state["done"],
+                               "total": _import_state["total"], "cve": _import_state["cve"]})
+                else:
+                    broadcast({"stage": "log", "message": line[:200]})
+            code = proc.wait()
+            broadcast({"stage": "done", "returncode": code,
+                       "total": _import_state["total"],
+                       "message": "Import complete" if code == 0
+                                  else f"Import exited with code {code}"})
+        except Exception as e:
+            broadcast({"stage": "error", "message": str(e)})
+        finally:
+            _import_state["running"] = False
+            broadcast(None)
+
+    if not _import_state["running"]:
+        threading.Thread(target=work, daemon=True).start()
+
+    def stream():
+        try:
+            while True:
+                try:
+                    item = q.get(timeout=1.0)
+                except queue.Empty:
+                    yield ": keepalive\n\n"
+                    continue
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item)}\n\n"
+        finally:
+            if q in _import_state["listeners"]:
+                _import_state["listeners"].remove(q)
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

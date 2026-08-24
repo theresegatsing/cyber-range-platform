@@ -753,6 +753,17 @@
         </header>
 
         <div id="error" style="display:none; padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 4px;"></div>
+        <div id="import-progress" style="display:none;background:#fff;border:1px solid #e8e0d8;border-radius:10px;padding:14px 18px;margin-bottom:4px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+                <span id="import-label" style="font-size:13px;color:#1e293b;font-weight:600">Starting import…</span>
+                <span id="import-count" style="font-size:12px;color:#64748b;font-variant-numeric:tabular-nums"></span>
+            </div>
+            <div style="height:8px;background:#e8e0d8;border-radius:4px;overflow:hidden">
+                <div id="import-bar" style="height:100%;width:0%;background:#0d9488;transition:width .3s"></div>
+            </div>
+            <div id="import-detail" style="font-size:11px;color:#94a3b8;margin-top:6px;font-family:Consolas,monospace"></div>
+        </div>
+        
         <!-- TAB BAR -->
         <div class="tab-bar" id="tab-bar">
             <button class="tab active" id="tab-active" onclick="switchTab('active')">Active</button>
@@ -870,27 +881,15 @@
                     <div class="help-content" id="help-content">
                         
                         <div class="brief-text" id="help-brief">Start a mission to see the brief here.</div>
-                        <button class="btn btn-primary" id="get-hint-btn" onclick="requestHint()" style="width:100%; margin-bottom:8px;">Get Hint</button>
+                        <button class="btn btn-primary" id="get-hint-btn" onclick="requestHint()" style="width:100%; margin-top:16px; margin-bottom:10px;">Get Hint</button>
                         <div class="hint" id="help-hint">
                             <span class="hint-icon">◆</span>
                             Click "Get Hint" if you're stuck.
                         </div>  
-                        
-                        <div style="margin-top:12px;">
-                            <label style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Describe your goal:</label>
-                            <textarea id="goal-input" rows="2" placeholder="e.g. scan the target for open ports"
-                                style="width:100%;padding:8px;border:1px solid #e8e0d8;border-radius:6px;font-family:inherit;font-size:12px;resize:vertical;"></textarea>
-                            <div id="goal-word-count" style="font-size:11px;color:#94a3b8;margin:2px 0 6px;">0 / 15 words</div>
-                            <button class="btn btn-secondary" id="get-command-btn" onclick="requestCommand()" style="width:100%;">Get Command</button>
-                            <div class="hint" id="command-result" style="margin-top:8px; display:none;"></div>
-                        </div>
+
 
                     </div>
                 </div>
-            </div>
-
-            <div class="mission-footer">
-                <button class="btn btn-secondary" id="submit-report-btn" onclick="submitReport()" disabled>Submit Report</button>
             </div>
         </div>
     </div>
@@ -939,6 +938,7 @@
             if (!restoreSession()) loadMissions();
             setInterval(saveSession, 5000);
             window.addEventListener('beforeunload', saveSession);
+            checkImportRunning();
         });
 
         
@@ -1005,21 +1005,7 @@
         }
 
 
-        function startIdleCheck() {
-            if (idleCheckInterval) clearInterval(idleCheckInterval);
-            idleCheckInterval = setInterval(() => {
-                if (!isMissionActive) return;
-                if (!currentMissionData) return;
-                if (flagCaptured) return;
-                if (currentStep >= 3) return;
-                const idleTime = (Date.now() - lastCommandTime) / 1000;
-                if (idleTime > 60 && !hintTriggered) {
-                    hintTriggered = true;
-                    fetchAIHint('idle', idleTime);
-                }
-            }, 5000);
-        }
-
+    
         function fetchAIHint(trigger, details) {
             const actions = lastCommands.slice(-5).join(',');
             const cveDesc = currentMissionData?.description || '';
@@ -1049,46 +1035,7 @@
             fetchAIHint('manual', null);
         }
 
-        const MAX_GOAL_WORDS = 15;
 
-        document.getElementById('goal-input')?.addEventListener('input', function() {
-            const words = this.value.trim().split(/\s+/).filter(Boolean);
-            const counter = document.getElementById('goal-word-count');
-            const btn = document.getElementById('get-command-btn');
-            counter.textContent = words.length + ' / ' + MAX_GOAL_WORDS + ' words';
-            if (words.length > MAX_GOAL_WORDS) {
-                counter.style.color = '#ef4444';
-                btn.disabled = true;
-            } else {
-                counter.style.color = '#94a3b8';
-                btn.disabled = false;
-            }
-        });
-
-        function requestCommand() {
-            const input = document.getElementById('goal-input');
-            const goal = input.value.trim();
-            const words = goal.split(/\s+/).filter(Boolean);
-            const resultDiv = document.getElementById('command-result');
-            resultDiv.style.display = 'block';
-
-            if (!goal) {
-                resultDiv.textContent = 'Describe what you\'re trying to do first.';
-                return;
-            }
-            if (words.length > MAX_GOAL_WORDS) {
-                resultDiv.textContent = 'Please shorten your goal to ' + MAX_GOAL_WORDS + ' words or fewer.';
-                return;
-            }
-
-            resultDiv.textContent = 'Thinking...';
-            const cveDesc = currentMissionData?.description || '';
-            const url = `${API_BASE}/ai/command_suggest?goal=${encodeURIComponent(goal)}&current_step=Step ${currentStep+1}&cve_description=${encodeURIComponent(cveDesc)}&vulnerability_id= + currentMissionId`;
-            fetch(url)
-                .then(res => res.json())
-                .then(data => { resultDiv.textContent = data.suggestion || 'Could not generate a suggestion.'; })
-                .catch(err => { resultDiv.textContent = 'Could not fetch suggestion: ' + err.message; });
-        }
 
         function handleTerminalInput(data) {
             if (commandRunning) return;
@@ -1176,7 +1123,6 @@
                     document.getElementById('blue-brief-text').textContent = blueBriefText;
                     document.getElementById('help-brief').textContent = 'Blue Team Phase: ' + blueBriefText;
                     document.getElementById('wtab-splunk').classList.remove('disabled');
-                    document.getElementById('submit-report-btn').disabled = false;
                     currentStep = nextStep;
                     updateTasks(currentStep);
                     switchWorkspace('splunk');
@@ -1330,7 +1276,6 @@
             failedAttempts++;
             term.writeln('\x1b[2;37m' + first + ': not a recognized command. This terminal speaks HTTP —\x1b[0m');
             term.writeln('\x1b[2;37mit is not a shell on the target. Type "help" for the list.\x1b[0m');
-            if (failedAttempts >= 3 && !hintTriggered) { hintTriggered = true; fetchAIHint('failure', failedAttempts); }
             prompt_();
         }
 
@@ -1405,13 +1350,7 @@
                         term.writeln('\x1b[1;33mYou enumerated a directory. Pick a file from it and read it.\x1b[0m');
                         failedAttempts = 0;
                     }
-                    else {
-                        failedAttempts++;
-                        if (failedAttempts >= 3 && !hintTriggered) {
-                            hintTriggered = true;
-                            fetchAIHint('failure', failedAttempts);
-                        }
-                    }
+                   
                 })
                 .catch(err => term.writeln('\x1b[1;31mcurl failed: ' + err.message + '\x1b[0m'))
                 .finally(() => { commandRunning = false; prompt_(); });
@@ -1445,7 +1384,6 @@
                     if (blueMode && currentStep === 2) {
                         term.writeln('\x1b[1;32mAttack traces located. Now write a detection rule.\x1b[0m');
                         currentStep = 3; updateTasks(currentStep);
-                        document.getElementById('submit-report-btn').disabled = false;
                     }
                 })
                 .catch(err => term.writeln('\x1b[1;31m' + err.message + '\x1b[0m'))
@@ -1651,7 +1589,6 @@
             }, 1000);
 
             flagCaptured = false;
-            document.getElementById('submit-report-btn').disabled = true;
             document.getElementById('blue-team-section').classList.remove('active');
             document.getElementById('rule-result').textContent = '';
             document.getElementById('rule-input').value = '';
@@ -1680,7 +1617,6 @@
                 }
             }
             switchWorkspace('terminal');
-            startIdleCheck();   // you defined this but never called it
             startFlagPoll()
         }
 
@@ -1815,7 +1751,6 @@
             term.writeln('\x1b[2;37mTry: index=cyber_range "mission-' + currentMissionId + '"\x1b[0m');
 
             document.getElementById('wtab-splunk').classList.remove('disabled');
-            document.getElementById('submit-report-btn').disabled = false;
 
             var blueSection = document.getElementById('blue-team-section');
             var blueBriefText = currentMissionData?.blue_team_brief ||
@@ -1895,7 +1830,6 @@
                         currentStep = 3;
                         updateTasks(currentStep);
                         document.getElementById('wtab-report').classList.remove('disabled');
-                        document.getElementById('submit-report-btn').disabled = false;
                         switchWorkspace('report');
                     }, 1500);
                 } else {
@@ -2119,7 +2053,6 @@
             const si = document.getElementById('splunk-iframe');
             if (si) si.src = 'about:blank';
             if (missionES) { missionES.close(); missionES = null; }
-            if (idleCheckInterval) clearInterval(idleCheckInterval);
             if (timerInterval) clearInterval(timerInterval);
             if (flagPollInterval) clearInterval(flagPollInterval);
             document.getElementById('view-mission').classList.remove('active');
@@ -2128,11 +2061,7 @@
             document.getElementById('blue-team-section').classList.remove('active');
             document.getElementById('rule-result').textContent = '';
             document.getElementById('rule-input').value = '';
-            document.getElementById('submit-report-btn').disabled = true;
             document.getElementById('wtab-splunk').classList.add('disabled');
-            document.getElementById('goal-input').value = '';
-            document.getElementById('goal-word-count').textContent = '0 / 15 words';
-            document.getElementById('command-result').style.display = 'none';
             var reportTemplate = document.getElementById('report-template');
             if (reportTemplate) {
                 reportTemplate.remove();
@@ -2163,6 +2092,13 @@
             try { sessionStorage.removeItem('cr_session'); } catch (e) {}
         }
 
+        function checkImportRunning() {
+            fetch(API_BASE + '/admin/import_status')
+                .then(r => r.json())
+                .then(s => { if (s.running && !importES) runImport(true); })
+                .catch(() => {});
+        }
+
         function restoreSession() {
             let s;
             try { s = JSON.parse(sessionStorage.getItem('cr_session') || 'null'); }
@@ -2189,7 +2125,7 @@
 
             if (flagCaptured) {
                 document.getElementById('wtab-splunk').classList.remove('disabled');
-                document.getElementById('submit-report-btn').disabled = false;
+            
                 document.getElementById('blue-brief-text').textContent =
                     currentMissionData.blue_team_brief || '';
             }
@@ -2216,7 +2152,6 @@
                 prompt_();
             }
             switchWorkspace('terminal');
-            startIdleCheck();
             startFlagPoll();
             return true;
         }
@@ -2224,75 +2159,84 @@
         // ============================================================
         // RUN IMPORT - IMPROVED WITH DETAILED ERROR MESSAGES
         // ============================================================
-        function runImport() {
-            var btn = document.getElementById('import-btn');
-            var dot = document.getElementById('status-dot');
-            var text = document.getElementById('status-text');
-            var errorDiv = document.getElementById('error');
-            
+        let importES = null;
+
+        function runImport(reattach) {
+            if (importES) return;
+            const btn = document.getElementById('import-btn');
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            const box = document.getElementById('import-progress');
+            const bar = document.getElementById('import-bar');
+            const label = document.getElementById('import-label');
+            const count = document.getElementById('import-count');
+            const detail = document.getElementById('import-detail');
+            const started = Date.now();
+
             btn.disabled = true;
-            btn.textContent = 'Importing...';
+            btn.textContent = 'Importing…';
             dot.className = 'dot warning';
-            text.textContent = 'Importing... (this may take several minutes)';
-            
-            errorDiv.style.display = 'block';
-            errorDiv.style.background = '#fef8f0';
-            errorDiv.style.color = '#92400e';
-            errorDiv.textContent = '⏳ Importing vulnerabilities from scanner database... Please wait. This may take 5-10 minutes.';
-            
-            var timeoutId = setTimeout(function() {
+            text.textContent = 'Importing';
+            box.style.display = 'block';
+            count.textContent = '';
+            detail.textContent = '';
+            if (reattach) {
+                label.textContent = 'Reattaching to running import…';
+            } else {
+                bar.style.width = '0%';
+                label.textContent = 'Starting import…';
+            }
+
+            function finish(ok, msg) {
+                if (importES) { importES.close(); importES = null; }
                 btn.disabled = false;
                 btn.textContent = 'Import Scanner';
-                dot.className = 'dot error';
-                text.textContent = 'Timeout';
-                errorDiv.style.background = '#fef2f2';
-                errorDiv.style.color = '#991b1b';
-                errorDiv.textContent = '❌ Import timed out after 10 minutes. The scanner database may have too many records. Try running it manually from the terminal.';
-                errorDiv.style.display = 'block';
-            }, 600000);
-            
-            fetch(API_BASE + '/admin/import', { method: 'POST' })
-                .then(function(res) { 
-                    clearTimeout(timeoutId);
-                    return res.json(); 
-                })
-                .then(function(data) {
-                    console.log('Import response:', data);
-                    btn.disabled = false;
-                    btn.textContent = 'Import Scanner';
-                    
-                    if (data.status === 'success') {
-                        dot.className = 'dot';
-                        text.textContent = 'Import complete';
-                        errorDiv.style.display = 'none';
-                        loadMissions();
-                    } else {
-                        dot.className = 'dot error';
-                        text.textContent = 'Failed';
-                        // Show detailed error if available
-                        var errorMsg = data.message || data.error || data.output || 'Unknown error';
-                        if (data.error) {
-                            errorMsg = data.error;
-                        } else if (data.output) {
-                            errorMsg = data.output;
-                        }
-                        errorDiv.style.background = '#fef2f2';
-                        errorDiv.style.color = '#991b1b';
-                        errorDiv.textContent = '❌ Import failed: ' + errorMsg;
-                        errorDiv.style.display = 'block';
+                dot.className = ok ? 'dot' : 'dot error';
+                text.textContent = ok ? 'Import complete' : 'Import failed';
+                label.textContent = msg;
+                if (ok) { bar.style.width = '100%'; loadMissions(); }
+                setTimeout(() => { if (ok) box.style.display = 'none'; }, 6000);
+            }
+
+            importES = new EventSource(API_BASE + '/admin/import_stream');
+
+            importES.onmessage = (e) => {
+                const m = JSON.parse(e.data);
+                const mins = Math.floor((Date.now() - started) / 60000);
+                const secs = Math.floor((Date.now() - started) / 1000) % 60;
+                const elapsed = mins + 'm ' + String(secs).padStart(2, '0') + 's';
+
+                if (m.stage === 'progress') {
+                    if (!m.total) {
+                        label.textContent = 'Reading scanner database…';
+                        count.textContent = elapsed;
+                        if (m.cve) detail.textContent = m.cve;
+                        return;
                     }
-                })
-                .catch(function(err) {
-                    clearTimeout(timeoutId);
-                    btn.disabled = false;
-                    btn.textContent = 'Import Scanner';
-                    dot.className = 'dot error';
-                    text.textContent = 'Error';
-                    errorDiv.style.background = '#fef2f2';
-                    errorDiv.style.color = '#991b1b';
-                    errorDiv.textContent = '❌ Failed to run import: ' + err.message;
-                    errorDiv.style.display = 'block';
-                });
+                    const pct = (m.done / m.total * 100);
+                    bar.style.width = pct.toFixed(1) + '%';
+                    label.textContent = 'Importing vulnerabilities…';
+                    count.textContent = m.done + ' / ' + m.total +
+                                        '  (' + pct.toFixed(0) + '%)  ·  ' + elapsed;
+                    if (m.cve) detail.textContent = 'Processing ' + m.cve;
+                } else if (m.stage === 'log') {
+                    detail.textContent = m.message;
+                } else if (m.stage === 'done') {
+                    finish(m.returncode === 0,
+                           m.returncode === 0
+                             ? (m.total
+                                 ? 'Imported ' + m.total + ' vulnerabilities in ' + elapsed
+                                 : 'No new vulnerabilities found — nothing to import.')
+                             : m.message);
+                } else if (m.stage === 'error') {
+                    finish(false, m.message);
+                }
+            };
+
+            importES.onerror = () => {
+                if (!importES) return;
+                finish(false, 'Lost connection to the backend during import.');
+            };
         }
     </script>
 </body>
