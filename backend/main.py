@@ -390,8 +390,10 @@ def report_pdf(sub: ReportSubmission):
 
 
     grade = cached.get("grade") or grade_report(
-        attack=sub.attack_description, detection=sub.detection_method,
-        rule=sub.detection_rule, recommendations=sub.recommendations,
+        attack=sub.attack_description,
+        detection=sub.detection_method,
+        rule=sub.detection_rule,
+        recommendations=sub.recommendations,
         cve_id=sub.cve_id, pattern=sub.pattern, payload=sub.payload)
     
     buf = io.BytesIO()

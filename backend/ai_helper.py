@@ -81,6 +81,68 @@ def _looks_broken(text: str) -> bool:
              "the brief must", "now generate"]
     return any(t in low for t in tells)
 
+
+
+_VOWELS = set("aeiouy")
+
+
+def _is_gibberish(text: str) -> bool:
+    """
+    Structural check only — no vocabulary list, no topic assumptions.
+    Detects keyboard-mashing. Deliberately conservative: when unsure, says no.
+    """
+    if not isinstance(text, str):
+        return True
+    t = text.strip()
+    if len(t) < 15:
+        return True
+
+    words = _re.findall(r"[A-Za-z']{1,}", t)
+    if len(words) < 4:
+        return True
+
+    lower = [w.lower() for w in words]
+    letters = "".join(lower)
+    if not letters:
+        return True
+
+    signals = 0
+
+    # 1. Every English word has a vowel (bar a handful like "hmm", "nth").
+    #    Mashing produces long vowel-free strings.
+    vowelless = sum(1 for w in lower if len(w) >= 4 and not (_VOWELS & set(w)))
+    if vowelless >= 2 or vowelless / len(lower) > 0.25:
+        signals += 1
+
+    # 2. Overall vowel ratio. English prose sits around 0.35-0.42.
+    ratio = sum(1 for c in letters if c in _VOWELS) / len(letters)
+    if ratio < 0.22 or ratio > 0.62:
+        signals += 1
+
+    # 3. Consonant runs. English tops out near 4 ("strengths"); mashing goes further.
+    if _re.search(r"[bcdfghjklmnpqrstvwxz]{6,}", letters):
+        signals += 1
+
+    # 4. Home-row bias — asdf/jkl; dominate real text only when mashed.
+    home = sum(1 for c in letters if c in "asdfghjkl")
+    if home / len(letters) > 0.72:
+        signals += 1
+
+    # 5. Repeated identical tokens ("test test test test").
+    uniq = len(set(lower)) / len(lower)
+    if len(lower) >= 4 and uniq < 0.5:
+        signals += 1
+    if len(lower) >= 6 and uniq < 0.3:
+        signals += 1   # severe repetition counts twice
+
+    # 6. No sentence-like structure at all: no spaces in a long string.
+    if len(t) > 40 and " " not in t.strip():
+        signals += 1
+
+    # two independent signals before rejecting
+    return signals >= 2
+
+
 # ----------------------------------------------------------
 # AI FEATURE 1: Red Team Mission Brief
 # ----------------------------------------------------------
@@ -240,10 +302,10 @@ def grade_report(attack: str = "", detection: str = "", rule: str = "",
     """Grade an incident report section by section. Empty sections score zero."""
 
     provided = {
-        "attack": len(attack.strip()) >= 15,
-        "detection": len(detection.strip()) >= 15,
+        "attack": not _is_gibberish(attack),
+        "detection": not _is_gibberish(detection),
         "rule": len(rule.strip()) >= 3,
-        "recommendations": len(recommendations.strip()) >= 15,
+        "recommendations": not _is_gibberish(recommendations),
     }
 
     if not any(provided.values()):
@@ -645,7 +707,7 @@ def get_pattern_explainer(pattern: str) -> dict:
         "name": "Unclassified",
         "plain": "This vulnerability doesn't map to a lab template yet. "
                  "Study the description and write up your analysis.",
-        "look_for": "—", "try": "—",
+        "look_for": "—", "then_try": "—",
     })
 
 IDENT_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
@@ -734,8 +796,6 @@ JSON:
     parsed.update(_seed_from_description(description))   # CVE text overrides the model
     params = _sanitize(pattern, parsed)
 
-
-    params = _sanitize(pattern, parsed)
 
     params["cve_id"] = cve_id
     params["flag_token"] = secrets.token_hex(8)
