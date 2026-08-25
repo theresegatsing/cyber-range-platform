@@ -61,8 +61,42 @@ def find_free_port(start_port=8080, max_attempts=100):
 
 
 
-_in_flight = set()   # guards against double-launch server-side
+_in_flight = set()                 # keys are (vulnerability_id, session)
 _in_flight_lock = threading.Lock()
+
+_port_lock = threading.Lock()
+_claimed_ports = set()
+
+
+def _sid(session: str) -> str:
+    """Docker-safe session id. Falls back to 'solo' for single-user use."""
+    s = _re.sub(r'[^A-Za-z0-9]', '', session or '')[:12]
+    return s or "solo"
+
+
+def _mission_name(vulnerability_id: int, session: str) -> str:
+    return f"mission-{vulnerability_id}-{_sid(session)}"
+
+
+def claim_free_port(start_port=8080, max_attempts=300):
+    """Reserve a port so two simultaneous starts can't pick the same one."""
+    with _port_lock:
+        for port in range(start_port, start_port + max_attempts):
+            if port in _claimed_ports:
+                continue
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.3)
+            result = sock.connect_ex(('127.0.0.1', port))
+            sock.close()
+            if result != 0:
+                _claimed_ports.add(port)
+                return port
+    return None
+
+
+def release_port(port):
+    with _port_lock:
+        _claimed_ports.discard(port)
 
 def wait_for_container_ready(port: int, timeout: int = 20, emit=None) -> bool:
     deadline = time.time() + timeout
@@ -79,7 +113,7 @@ def wait_for_container_ready(port: int, timeout: int = 20, emit=None) -> bool:
     return False
 
 
-def _run_mission_start(vulnerability_id: int, emit):
+def _run_mission_start(vulnerability_id: int, emit, session: str = "solo"):
     conn = get_platform_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute("SELECT * FROM platform_vulnerabilities WHERE id = %s", (vulnerability_id,))
@@ -98,19 +132,22 @@ def _run_mission_start(vulnerability_id: int, emit):
         blue_brief = generate_blue_team_brief(vuln['cve_id'], vuln['description'])
         BRIEF_CACHE[vulnerability_id] = {"red": red_brief, "blue": blue_brief}
 
-    free_port = find_free_port()
+
+
+    free_port = claim_free_port()
     if not free_port:
         conn.close()
         raise RuntimeError("No free ports available")
 
-    container_name = f"mission-{vulnerability_id}"
+    container_name = _mission_name(vulnerability_id, session)
     try:
         existing = docker_client.containers.get(container_name)
         emit("cleanup", f"Removing previous container {container_name}…")
-        existing.stop()
-        existing.remove()
+        existing.remove(force=True)
     except docker.errors.NotFound:
         pass
+
+
 
     emit("image", f"Resolving vulnerable environment for {vuln['cve_id']}…")
     image_tag, pattern, lab = build_cve_image(docker_client, vuln['cve_id'],
@@ -127,7 +164,7 @@ def _run_mission_start(vulnerability_id: int, emit):
             "splunk-index": "cyber_range",
             "splunk-verify-connection": "true",
             "splunk-format": "json",
-            "tag": f"mission-{vulnerability_id}",
+            "tag": container_name,
         }
     }
     
@@ -146,20 +183,22 @@ def _run_mission_start(vulnerability_id: int, emit):
 
     splunk_ok = True
     try:
-        container_id = _create_and_start(True)
-    except Exception as e:
-        msg = str(e).lower()
-        if "logging driver" in msg or "splunk" in msg or "8088" in msg:
-            splunk_ok = False
-            emit("container", "⚠️ Splunk unreachable — starting without log forwarding. "
-                              "The Blue Team phase will have no data.")
-            try:
-                docker_client.containers.get(container_name).remove(force=True)
-            except Exception:
-                pass
-            container_id = _create_and_start(False)
-        else:
-            raise
+        try:
+            container_id = _create_and_start(True)
+        except Exception as e:
+            msg = str(e).lower()
+            if "logging driver" in msg or "splunk" in msg or "8088" in msg:
+                splunk_ok = False
+                emit("container", "⚠️ Splunk unreachable — starting without log forwarding.")
+                try:
+                    docker_client.containers.get(container_name).remove(force=True)
+                except Exception:
+                    pass
+                container_id = _create_and_start(False)
+            else:
+                raise
+    finally:
+        release_port(free_port)
 
     target_ready = wait_for_container_ready(free_port, emit=emit)
 
@@ -186,35 +225,37 @@ def _run_mission_start(vulnerability_id: int, emit):
         "pattern": pattern,
         "explainer": get_pattern_explainer(pattern),
         "lab": lab,
+        "session": _sid(session),
+        "container_name": container_name,
+        "splunk_tag": container_name,
     }
 
 
 @app.get("/missions/{vulnerability_id}/start_stream")
-def start_mission_stream(vulnerability_id: int):
+def start_mission_stream(vulnerability_id: int, session: str = "solo"):
     q = queue.Queue()
+    key = (vulnerability_id, _sid(session))
 
     def emit(stage, message, **extra):
         q.put({"stage": stage, "message": message, **extra})
 
     def work():
-        # claim this mission id atomically
         with _in_flight_lock:
-            if vulnerability_id in _in_flight:
-                q.put({"stage": "error", "message": "This mission is already starting."})
+            if key in _in_flight:
+                q.put({"stage": "error",
+                       "message": "You already have this mission starting."})
                 q.put(None)
                 return
-            _in_flight.add(vulnerability_id)
-
+            _in_flight.add(key)
         try:
-            result = _run_mission_start(vulnerability_id, emit)
+            result = _run_mission_start(vulnerability_id, emit, session)
             q.put({"stage": "done", "message": "Environment ready", "result": result})
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            import traceback; traceback.print_exc()
             q.put({"stage": "error", "message": str(e)})
         finally:
             with _in_flight_lock:
-                _in_flight.discard(vulnerability_id)
+                _in_flight.discard(key)
             q.put(None)
 
     threading.Thread(target=work, daemon=True).start()
@@ -330,15 +371,16 @@ def get_blue_team_brief(cve_id: str, description: str):
 
 @app.get("/ai/hint")
 def get_hint(task_name: str, current_step: str, actions: str = "",
-             cve_description: str = "", vulnerability_id: int = None):
+             cve_description: str = "", vulnerability_id: int = None, session: str = "solo"):
+    
     action_list = [a for a in actions.split(",") if a.strip()] if actions else []
 
     activity, lab = [], {}
     if vulnerability_id is not None:
-        data = mission_activity(vulnerability_id)
+        data = mission_activity(vulnerability_id, session=session)
         activity = [f"{r['method']} {r['path']} -> {r['status']}" for r in data.get("requests", [])]
         try:
-            container = docker_client.containers.get(f"mission-{vulnerability_id}")
+            container = docker_client.containers.get(_mission_name(vulnerability_id, session))
             img = docker_client.images.get(container.image.id)
             lab = json.loads((img.labels or {}).get("cyber_range_lab") or "{}")
         except Exception:
@@ -489,7 +531,20 @@ def get_command_suggestion(goal: str, current_step: str, cve_description: str = 
         except Exception:
             lab = {}
     return {"suggestion": generate_command_suggestion(goal, current_step, cve_description, lab)}
-    
+
+
+@app.post("/missions/{vulnerability_id}/end")
+def end_mission(vulnerability_id: int, session: str = "solo"):
+    name = _mission_name(vulnerability_id, session)
+    try:
+        docker_client.containers.get(name).remove(force=True)
+        removed = True
+    except Exception:
+        removed = False
+    MISSION_STATE.pop((vulnerability_id, _sid(session)), None)
+    return {"removed": removed, "container": name}
+
+
 # ============================================================
 # MISSION MANAGEMENT
 # ============================================================
@@ -559,135 +614,19 @@ def preview_mission(vulnerability_id: int):
     except Exception as e:
         return {"error": str(e)}
 
-@app.post("/missions/{vulnerability_id}/start")
-def start_mission(vulnerability_id: int):
-    build_log = []
-    def log(msg):
-        print(msg)
-        build_log.append(msg)
 
-    try:
-        conn = get_platform_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        cursor.execute("SELECT * FROM platform_vulnerabilities WHERE id = %s", (vulnerability_id,))
-        vuln = cursor.fetchone()
-
-        if not vuln:
-            conn.close()
-            return {"error": "Vulnerability not found"}
-
-        log(f"🤖 Generating AI briefs for {vuln['cve_id']}...")
-        red_brief = generate_mission_brief(vuln['cve_id'], vuln['description'], vuln['cvss_score'], vuln['asset'])
-        blue_brief = generate_blue_team_brief(vuln['cve_id'], vuln['description'])
-
-        free_port = find_free_port()
-        if not free_port:
-            conn.close()
-            return {"error": "No free ports available"}
-
-        log(f"🐳 Starting container on port {free_port}...")
-        try:
-            container_name = f"mission-{vulnerability_id}"
-
-            try:
-                existing = docker_client.containers.get(container_name)
-                existing.stop()
-                existing.remove()
-                log(f"Removed existing container: {container_name}")
-            except docker.errors.NotFound:
-                pass
-
-            log(f"🏗️  Resolving vulnerable environment for {vuln['cve_id']}...")
-
-            result = build_cve_image(docker_client, vuln['cve_id'], vuln['description'])
-            if isinstance(result, tuple) and len(result) == 2:
-                image_tag, pattern = result
-            else:
-                image_tag, pattern = result, "unknown"
-            log(f"   Using image: {image_tag} (pattern: {pattern})")
-
-            log_config = LogConfig(
-                driver="splunk",
-                options={
-                    "splunk-token": "bb056fbe-a182-4ff6-8612-803df97d6d24",
-                    "splunk-url": "https://172.16.25.2:8088",
-                    "splunk-insecureskipverify": "true",
-                    "splunk-sourcetype": "docker",
-                    "splunk-index": "cyber_range",
-                    "splunk-verify-connection": "false",
-                    "mode": "non-blocking",
-                    "max-buffer-size": "2m",
-                    "tag": f"mission-{vulnerability_id}"
-                }
-            )
-
-            host_config = docker_client.api.create_host_config(
-                port_bindings={80: free_port},
-                log_config=log_config
-            )
-
-            container_id = docker_client.api.create_container(
-                image=image_tag,
-                host_config=host_config,
-                name=container_name,
-                detach=True
-            )
-
-            docker_client.api.start(container=container_id)
-            log(f"Container {container_name} started on port {free_port} with Splunk logging")
-
-            log("⏳ Waiting for target to become ready...")
-            target_ready = wait_for_container_ready(free_port)
-            log(f"   Target ready: {target_ready}")
-
-            if vuln['platform_status'] == 'pending':
-                cursor.execute("""
-                    UPDATE platform_vulnerabilities SET platform_status = 'active' WHERE id = %s
-                """, (vulnerability_id,))
-
-            cursor.execute("""
-                INSERT INTO missions (vulnerability_id, cve_id, red_team_brief, blue_team_brief, status, created_at)
-                VALUES (%s, %s, %s, %s, 'active', %s)
-            """, (vulnerability_id, vuln['cve_id'], red_brief, blue_brief, datetime.now()))
-
-            conn.commit()
-            conn.close()
-
-            return {
-                "status": "success",
-                "cve_id": vuln['cve_id'],
-                "red_team_brief": red_brief,
-                "blue_team_brief": blue_brief,
-                "container_name": container_name,
-                "container_port": free_port,
-                "app_url": f"http://localhost:{free_port}",
-                "target_ready": target_ready,
-                "pattern": pattern,          # <-- new: frontend needs this for terminal commands
-                "build_log": build_log
-            }
-
-        except Exception as e:
-            conn.close()
-            return {"error": f"Container error: {str(e)}", "build_log": build_log}
-
-    except Exception as e:
-        return {"error": str(e)}
 
 @app.get("/missions/{vulnerability_id}/proxy")
-def proxy_target(vulnerability_id: int, path: str = "/"):
-    """Relay a request to this mission's container so the terminal can hit it for real."""
+def proxy_target(vulnerability_id: int, path: str = "/", session: str = "solo"):
     try:
-        container = docker_client.containers.get(f"mission-{vulnerability_id}")
-        port = container.attrs["NetworkSettings"]["Ports"]["80/tcp"][0]["HostPort"]
+        port = _target_port(vulnerability_id, session)
     except Exception as e:
         return {"error": f"Target container not reachable: {e}"}
-
     if not path.startswith("/"):
         path = "/" + path
     try:
         r = requests.get(f"http://localhost:{port}{path}", timeout=8)
-        st = _state(vulnerability_id)
+        st = _state(vulnerability_id, session)
         st["requests"].append({"method": "GET", "path": path, "status": r.status_code})
         st["requests"] = st["requests"][-100:]
         return {"status": r.status_code, "body": r.text[:6000]}
@@ -728,24 +667,30 @@ def purge_cve_images(include_containers: bool = True):
 
 @app.on_event("startup")
 def cleanup_stale_missions():
-    """Remove leftover mission containers from a previous backend run."""
+    """Remove stopped mission containers. Leaves running sessions alone."""
     if docker_client is None:
         return
-    removed = []
+    removed, kept = [], []
     for c in docker_client.containers.list(all=True):
-        if c.name.startswith("mission-"):
-            try:
-                c.remove(force=True)
-                removed.append(c.name)
-            except Exception as e:
-                print(f"⚠️  Could not remove {c.name}: {e}")
+        if not c.name.startswith("mission-"):
+            continue
+        if c.status == "running":
+            kept.append(c.name)
+            continue
+        try:
+            c.remove(force=True)
+            removed.append(c.name)
+        except Exception as e:
+            print(f"⚠️  Could not remove {c.name}: {e}")
     if removed:
-        print(f"🧹 Cleaned up {len(removed)} stale mission container(s): {', '.join(removed)}")
+        print(f"🧹 Removed {len(removed)} stopped mission container(s)")
+    if kept:
+        print(f"▶️  Left {len(kept)} running mission(s) alone: {', '.join(kept)}")
 
-
+        
 @app.get("/missions/{vulnerability_id}/activity")
-def mission_activity(vulnerability_id: int, limit: int = 40):
-    return {"requests": _state(vulnerability_id)["requests"][-limit:]}
+def mission_activity(vulnerability_id: int, limit: int = 40, session: str = "solo"):
+    return {"requests": _state(vulnerability_id, session)["requests"][-limit:]}
 
 
 from fastapi import Response
@@ -861,15 +806,15 @@ def run_scanner_import():
 class RuleTest(BaseModel):
     rule: str
     payload: str
+    session: str = "solo"
 
 
-def _recreate_with_rule(vulnerability_id: int, rule: str):
+def _recreate_with_rule(vulnerability_id: int, rule: str , session: str = "solo"):
     """Recreate the mission container with WAF_RULE set, on the same port."""
-    name = f"mission-{vulnerability_id}"
+    name = _mission_name(vulnerability_id, session)
     old = docker_client.containers.get(name)
     image_tag = old.image.tags[0] if old.image.tags else old.image.id
     port = old.attrs["NetworkSettings"]["Ports"]["80/tcp"][0]["HostPort"]
-
     old.remove(force=True)
 
     log_config = {
@@ -882,7 +827,7 @@ def _recreate_with_rule(vulnerability_id: int, rule: str):
             "splunk-index": "cyber_range",
             "splunk-verify-connection": "true",
             "splunk-format": "json",
-            "tag": f"mission-{vulnerability_id}",
+             "tag": name,
         },
     }
     host_config = docker_client.api.create_host_config(
@@ -913,7 +858,7 @@ def test_rule(vulnerability_id: int, sub: RuleTest):
         return {"error": "No recorded attack to replay — capture the flag first."}
 
     try:
-        port = _recreate_with_rule(vulnerability_id, rule)
+        port = _recreate_with_rule(vulnerability_id, rule, sub.session)
     except Exception as e:
         return {"error": f"Could not redeploy target: {e}"}
 
@@ -964,20 +909,23 @@ def test_rule(vulnerability_id: int, sub: RuleTest):
 MISSION_STATE = {}   # vuln_id -> {"requests": [...], "flag_path": str|None}
 
 
-def _state(vid: int):
-    return MISSION_STATE.setdefault(vid, {"requests": [], "flag_path": None})
+def _state(vid: int, session: str = "solo"):
+    return MISSION_STATE.setdefault((vid, _sid(session)),
+                                    {"requests": [], "flag_path": None})
 
 
-def _target_port(vid: int):
-    c = docker_client.containers.get(f"mission-{vid}")
+def _target_port(vid: int, session: str = "solo"):
+    c = docker_client.containers.get(_mission_name(vid, session))
     return c.attrs["NetworkSettings"]["Ports"]["80/tcp"][0]["HostPort"]
 
 
 @app.get("/missions/{vulnerability_id}/browse", response_class=HTML)
-def browse_target(vulnerability_id: int, request: Request, path: str = "/"):
+def browse_target(vulnerability_id: int, request: Request, path: str = "/", session: str = "solo"):
     """Serve the target through the backend so Target-tab traffic is observable."""
+    
     params = dict(request.query_params)
     params.pop("path", None)
+    params.pop("session", None)
     real_path = params.pop("__path", path) or "/"
     if not real_path.startswith("/"):
         real_path = "/" + real_path
@@ -985,13 +933,13 @@ def browse_target(vulnerability_id: int, request: Request, path: str = "/"):
     full = real_path + ("?" + qs if qs else "")
 
     try:
-        port = _target_port(vulnerability_id)
+        port = _target_port(vulnerability_id, session)
         r = requests.get(f"http://localhost:{port}{full}", timeout=8)
         body, status = r.text, r.status_code
     except Exception as e:
         return HTML(f"<pre>Target unreachable: {e}</pre>", status_code=502)
 
-    st = _state(vulnerability_id)
+    st = _state(vulnerability_id, session)
     st["requests"].append({"method": "GET", "path": full, "status": status})
     st["requests"] = st["requests"][-100:]
 
@@ -999,19 +947,18 @@ def browse_target(vulnerability_id: int, request: Request, path: str = "/"):
         st["flag_path"] = full
         print(f"🚩 Flag captured via Target tab: {full}")
 
-    base = f"/missions/{vulnerability_id}/browse"
-    # keep navigation inside the proxy
+    base = f"/missions/{vulnerability_id}/browse?session={_sid(session)}"
     body = _re.sub(r'action=(["\'])(/[^"\']*)\1',
                    lambda m: f'action="{base}"><input type="hidden" name="__path" value="{m.group(2)}"',
                    body)
     body = _re.sub(r'href=(["\'])(/[^"\']*)\1',
-                   lambda m: f'href="{base}?path={m.group(2)}"', body)
+                   lambda m: f'href="{base}&path={m.group(2)}"', body)
     return HTML(body, status_code=status)
 
 
 @app.get("/missions/{vulnerability_id}/flag_status")
-def flag_status(vulnerability_id: int):
-    return {"flag_path": _state(vulnerability_id)["flag_path"]}
+def flag_status(vulnerability_id: int, session: str = "solo"):
+    return {"flag_path": _state(vulnerability_id, session)["flag_path"]}
 
 
 import subprocess, sys

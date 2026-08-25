@@ -8,6 +8,8 @@ writes a blocking rule, and the platform **redeploys the target and replays thei
 attack** to prove whether the rule actually holds. Then it grades the write-up and
 produces a PDF incident report.
 
+Learners need nothing installed — just a browser and a URL.
+
 ---
 
 ## Table of contents
@@ -18,18 +20,20 @@ produces a PDF incident report.
 4. [Technology choices and why](#4-technology-choices-and-why)
 5. [Repository layout](#5-repository-layout)
 6. [Setting up a new machine](#6-setting-up-a-new-machine)
-7. [Splunk setup](#7-splunk-setup)
-8. [Configuration reference](#8-configuration-reference)
-9. [Running the platform](#9-running-the-platform)
-10. [The vulnerability template system](#10-the-vulnerability-template-system)
-11. [The learner's terminal](#11-the-learners-terminal)
-12. [The blocking-rule replay loop](#12-the-blocking-rule-replay-loop)
-13. [API reference](#13-api-reference)
-14. [AI features](#14-ai-features)
-15. [Operations and maintenance](#15-operations-and-maintenance)
-16. [Troubleshooting](#16-troubleshooting)
-17. [Known limitations](#17-known-limitations)
-18. [Development history](#18-development-history)
+7. [Multi-user access and deployment](#7-multi-user-access-and-deployment)
+8. [Splunk setup](#8-splunk-setup)
+9. [Configuration reference](#9-configuration-reference)
+10. [Running the platform](#10-running-the-platform)
+11. [The vulnerability template system](#11-the-vulnerability-template-system)
+12. [The learner's terminal](#12-the-learners-terminal)
+13. [The blocking-rule replay loop](#13-the-blocking-rule-replay-loop)
+14. [API reference](#14-api-reference)
+15. [AI features](#15-ai-features)
+16. [Operations and maintenance](#16-operations-and-maintenance)
+17. [Troubleshooting](#17-troubleshooting)
+18. [Known limitations](#18-known-limitations)
+19. [Demo video](#19-demo-video)
+20. [Development history](#20-development-history)
 
 ---
 
@@ -74,7 +78,7 @@ still returns 200.
             ▼
 ┌─────────────────────────────────────────────────────────┐
 │ FastAPI backend  (backend/main.py)  :8000               │
-│  • serves the frontend                                  │
+│  • serves the frontend to every learner's browser       │
 │  • streams mission build progress over SSE              │
 │  • proxies learner traffic to the target container      │
 │  • redeploys targets with a WAF rule and replays attacks│
@@ -82,11 +86,11 @@ still returns 200.
 └───────┬─────────────────────────────────┬───────────────┘
         │ Docker SDK                      │ HTTP
         ▼                                 ▼
-┌────────────────────┐            ┌──────────────────────┐
-│ mission-<id>       │  stdout    │ Splunk HEC :8088     │
-│ Flask lab container│───────────►│ index=cyber_range    │
-│ built per CVE      │  splunk    │ Splunk Web :8000     │
-└────────────────────┘  driver    └──────────────────────┘
+┌──────────────────────────┐    ┌──────────────────────┐
+│ mission-<id>-<session>   │    │ Splunk HEC :8088     │
+│ one container per learner│───►│ index=cyber_range    │
+│ Flask lab built per CVE  │    │ Splunk Web :8000     │
+└──────────────────────────┘    └──────────────────────┘
         ▲
         │ built from
 ┌────────────────────┐
@@ -98,9 +102,9 @@ still returns 200.
 
 Scanner findings → PostgreSQL → AI classifies the CVE into a vulnerability class →
 a template is filled with CVE-specific names → Docker builds and caches an image per
-CVE → a container runs with the Splunk log driver → the learner attacks it through a
-backend proxy → the container's logs land in Splunk → the learner's blocking rule is
-injected as an environment variable and the attack is replayed.
+CVE → a container runs per learner with the Splunk log driver → the learner attacks it
+through a backend proxy → the container's logs land in Splunk → the learner's blocking
+rule is injected as an environment variable and the attack is replayed.
 
 ---
 
@@ -113,11 +117,12 @@ What happens between clicking **Start Mission** and the terminal appearing:
 | Preview | `preview_mission` | Generates the Red and Blue briefs, caches them in `BRIEF_CACHE`. Shown in the modal. No container is created. |
 | Start (SSE) | `start_mission_stream` → `_run_mission_start` | Runs in a background thread; progress is streamed to the browser as it happens. |
 | Briefs | `BRIEF_CACHE` lookup | Reuses the preview briefs — no second AI call. |
-| Cleanup | Docker SDK | Removes any existing `mission-<id>` container. |
-| Image | `build_cve_image` | Checks the image cache by tag **and template fingerprint**. Rebuilds if the template changed. |
+| Cleanup | Docker SDK | Removes this learner's previous `mission-<id>-<session>` container, if any. |
+| Image | `build_cve_image` | Checks the image cache by tag **and template fingerprint**. Rebuilds if the template changed. Shared across learners. |
 | Classify | `classify_vulnerability_pattern` | Only on a cache miss. Maps the CVE to one of 12 classes, or `unsupported`. |
 | Params | `generate_template_params` | Extracts the endpoint / parameter names from the CVE text by regex first, model second. |
 | Build | `docker api.build` | Streams `Step n/m` lines to the browser. |
+| Port | `claim_free_port` | Reserves a port under a lock so two simultaneous starts can't collide. |
 | Run | Docker SDK | Starts with the Splunk log driver; falls back to no logging if Splunk is unreachable. |
 | Ready | `wait_for_container_ready` | Polls the target until it answers HTTP. |
 | Mission | frontend | Terminal, Target browser, Splunk and Report tabs unlock in sequence. |
@@ -169,7 +174,6 @@ cyber-range-platform/
 │   ├── scanner_import.py       Import pipeline (run as a subprocess)
 │   ├── setup_db.py             Creates the platform schema
 │   ├── check_tables.py         Schema sanity check
-│   ├── rule_validator.py       (legacy — superseded by the replay loop)
 │   └── vuln_templates/
 │       ├── path_traversal/     app.py.template + Dockerfile.template
 │       ├── sql_injection/
@@ -194,8 +198,7 @@ cyber-range-platform/
 ├── scripts/
 │   ├── exploit_sqli.py         Standalone exploit demo
 │   ├── install_ubuntu.sh       Production setup
-│   ├── setup_windows.ps1       Development setup
-│   └── run-dvwa.ps1            (legacy)
+│   └── setup_windows.ps1       Development setup
 ├── docs/
 ├── .env                        Secrets and connection strings — NOT committed
 ├── requirements.txt
@@ -211,7 +214,7 @@ cyber-range-platform/
 | Role | Needs |
 |------|-------|
 | **End user (learner)** | Nothing. A modern browser and the platform URL. |
-| **Developer** | Docker Desktop, Python 3.11+, PostgreSQL, Ollama, Git |
+| **Administrator / developer** | Docker Desktop, Python 3.11+, PostgreSQL, Ollama, Git |
 | **Production server** | Docker Engine, Docker Compose, Python 3.11+, PostgreSQL, Ollama, network access to Splunk |
 
 Learners never clone the repo, install Docker, or run anything locally.
@@ -284,7 +287,7 @@ python check_tables.py    # confirm the tables exist
 ### 6.5 Write the `.env` file
 
 `.env` lives at the **repository root**, one level above `backend/`.
-See [section 8](#8-configuration-reference) for every variable.
+See [section 9](#9-configuration-reference) for every variable.
 
 > **`.env` syntax matters:** no spaces around `=`, no quotes around values.
 > `SPLUNK_WEB_URL = "http://host:8000"` will be read as a key named
@@ -302,7 +305,7 @@ Change it to your own path. The platform only ever **reads** this file.
 
 ### 6.7 Configure Splunk
 
-See [section 7](#7-splunk-setup). The platform runs without Splunk — the Blue Team
+See [section 8](#8-splunk-setup). The platform runs without Splunk — the Blue Team
 phase just has no data to investigate.
 
 ### 6.8 First run
@@ -325,9 +328,184 @@ then start a mission.
 
 ---
 
-## 7. Splunk setup
+## 7. Multi-user access and deployment
 
-### 7.1 Create the index
+### 7.1 How it works
+
+This is a **web application**, not a desktop tool. One machine — the **host** —
+runs everything. Everybody else opens a URL in a browser.
+
+| Component | Where it runs |
+|-----------|---------------|
+| Browser UI | Each learner's own machine |
+| FastAPI backend | Host only |
+| Docker + mission containers | Host only |
+| Ollama (AI) | Host only |
+| PostgreSQL | Host only |
+| Splunk | Its own server, reachable from both |
+
+The administrator runs the backend on the host and works at `http://localhost:8000/`.
+Everyone else uses `http://<host-ip>:8000/` — the same application, reached across the
+network.
+
+The learner's browser never talks to a mission container directly. Every request —
+terminal `curl` commands and the Target tab alike — is relayed by the backend on the
+host. That is why learners need no Docker, no Python, and no repository clone.
+
+**The host must stay running.** If the backend or Docker Desktop is closed, every
+learner's session ends. Only the administrator starts, stops or restarts the backend.
+
+### 7.2 One-time setup on the host
+
+**a) The frontend must resolve the API dynamically.** In `frontend/index.html`:
+
+```js
+const API_BASE = window.location.origin;
+```
+
+Not a hard-coded `http://localhost:8000` — that would point at each learner's *own*
+machine, and nothing would load.
+
+**b) The backend must bind all interfaces.** The standard start command already does:
+
+```bash
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+`0.0.0.0` means "listen on every network interface," not just the loopback.
+
+**c) Open port 8000 in the firewall.** This must run in an **elevated** PowerShell.
+Press **Win**, type `powershell`, right-click **Windows PowerShell**, choose
+**Run as administrator**, and accept the UAC prompt. The title bar will read
+"Administrator: Windows PowerShell". Then:
+
+```powershell
+New-NetFirewallRule -DisplayName "Cyber Range 8000" -Direction Inbound `
+  -LocalPort 8000 -Protocol TCP -Action Allow
+```
+
+Success prints the rule's details, including `Enabled : True`.
+`Access is denied` means the window is not elevated — close it and reopen as
+administrator.
+
+This is a one-time step; the rule persists across reboots.
+
+On Ubuntu the equivalent is:
+
+```bash
+sudo ufw allow 8000/tcp
+```
+
+### 7.3 Finding the host's IP address
+
+Learners connect to `http://<host-ip>:8000/`, so you need the host's address on the
+network.
+
+**On Windows:**
+
+```powershell
+ipconfig | Select-String "IPv4"
+```
+
+Example output:
+
+```
+   IPv4 Address. . . . . . . . . . . : 172.20.16.1
+   IPv4 Address. . . . . . . . . . . : 172.16.102.146
+```
+
+> **Pick the right one.** A machine running Docker Desktop shows extra *virtual*
+> adapters — usually WSL or Hyper-V — that other machines cannot reach. In the example
+> above, `172.20.16.1` is Docker's internal adapter and `172.16.102.146` is the real
+> one. If in doubt, run `ipconfig` with no filter and take the IPv4 address listed
+> under your **Wi-Fi** or **Ethernet** adapter, not under `vEthernet (WSL)` or
+> `Docker Desktop`.
+
+**On Linux (production server):**
+
+```bash
+hostname -I | awk '{print $1}'
+# or, to see adapter names too:
+ip -4 addr show | grep inet
+```
+
+Ignore `127.0.0.1` (loopback) and anything on `docker0` or `br-*` (Docker bridges).
+
+**Confirm it's reachable** — run this from a *learner's* machine, not the host:
+
+```powershell
+Test-NetConnection <host-ip> -Port 8000
+```
+
+`TcpTestSucceeded : True` means you're ready. `False` means the firewall rule is
+missing, the backend isn't running, or the network blocks client-to-client traffic
+(common on guest Wi-Fi — an IT question, not a platform one).
+
+### 7.4 Sharing with learners
+
+Send them one line:
+
+```
+http://<host-ip>:8000/
+```
+
+Nothing else. No install, no clone, no platform credentials.
+
+### 7.5 When the platform moves to a central server
+
+The URL changes; nothing else does. On the new server:
+
+1. Complete [section 6](#6-setting-up-a-new-machine) on that machine.
+2. Find its IP with the commands in [7.3](#73-finding-the-hosts-ip-address).
+3. Open port 8000 in its firewall.
+4. Update `SPLUNK_HEC_URL` and `SPLUNK_WEB_URL` in `.env` if Splunk's address differs
+   from the new server's viewpoint.
+5. Distribute the new `http://<server-ip>:8000/`.
+
+**A central server should get a DNS name.** Ask whoever runs your DNS to point
+something like `training.company.local` at the server's IP. The URL then never changes
+again, even if the server's address does — and learners get a link they can remember.
+That is purely a networking task; the platform needs no change, because `API_BASE`
+follows whatever hostname the browser used.
+
+For a permanent deployment, also run the backend as a service rather than from a
+terminal (systemd on Linux, NSSM or Task Scheduler on Windows) so it survives reboots
+and logouts. Drop `--reload`, which is a development convenience.
+
+### 7.6 Concurrent learners
+
+Multiple people can run **the same mission at the same time**.
+
+Each browser tab generates a random session id stored in `sessionStorage`. Containers
+are named `mission-<vulnerability-id>-<session>`, so two learners on the same CVE get
+two separate containers on two separate ports:
+
+```
+mission-97-rdocxl4o   0.0.0.0:8080->80/tcp
+mission-97-hzgf3uho   0.0.0.0:8081->80/tcp
+```
+
+Everything downstream is scoped the same way — request history, flag-capture state,
+WAF rule tests, and the Splunk search tag. One learner's exploit never appears in
+another's logs, and one learner's blocking rule never redeploys another's target.
+
+What is deliberately **shared**: the Docker image for a given CVE, and the cached
+mission briefs. Both are identical per CVE, so sharing them saves a full rebuild and
+several AI calls per learner.
+
+Two things worth knowing:
+
+- **Ollama serializes by default.** If two learners start *different, uncached* CVEs
+  at the same moment, the second waits for the first's briefs. Set
+  `OLLAMA_NUM_PARALLEL=2` (or higher) on the host to overlap them.
+- **Ports are claimed under a lock**, so simultaneous starts can't pick the same one.
+  The range is 8080–8379, which is ample.
+
+---
+
+## 8. Splunk setup
+
+### 8.1 Create the index
 
 Splunk Web → **Settings → Indexes → New Index**
 
@@ -337,7 +515,7 @@ Splunk Web → **Settings → Indexes → New Index**
 | Data Type | Events |
 | Max Data Size | your choice |
 
-### 7.2 Enable HEC globally
+### 8.2 Enable HEC globally
 
 **Settings → Data Inputs → HTTP Event Collector → Global Settings**
 
@@ -345,7 +523,7 @@ Splunk Web → **Settings → Indexes → New Index**
 - Default Index: `cyber_range`
 - HTTP Port: `8088`
 
-### 7.3 Create a HEC token
+### 8.3 Create a HEC token
 
 **Settings → Data Inputs → HTTP Event Collector → New Token**
 
@@ -357,7 +535,7 @@ Splunk Web → **Settings → Indexes → New Index**
 
 Copy the token into `.env` as `SPLUNK_HEC_TOKEN`. It is not shown again.
 
-### 7.4 Allow iframe embedding (optional)
+### 8.4 Allow iframe embedding (optional)
 
 Splunk sends `X-Frame-Options: SAMEORIGIN` by default, which prevents embedding it
 in the platform. To allow it, edit on the Splunk host:
@@ -394,7 +572,10 @@ Because of this the Splunk tab ships as a **launcher panel** — it shows the ex
 query and opens Splunk in a new tab. Full embedding requires Splunk Web on HTTPS or
 the reverse proxy at `/splunk-proxy/`.
 
-### 7.5 Verify the pipeline
+Learners must be able to reach Splunk's address from **their own** machines, since the
+link opens in their browser. They also need Splunk credentials.
+
+### 8.5 Verify the pipeline
 
 Test HEC directly (PowerShell 5.1 needs the certificate workaround first):
 
@@ -426,30 +607,30 @@ docker run --rm curlimages/curl -k -s -o /dev/null -w "%{http_code}`n" `
   https://<splunk-host>:8088/services/collector/health
 ```
 
-### 7.6 Searching for a mission's logs
+### 8.6 Searching for a mission's logs
 
 Docker's splunk driver writes the container tag into a JSON field named `tag`.
 **`tag` is a reserved keyword in SPL**, so a field search fails with
-*"The tag 'mission-91' does not exist or is deactivated."*
+*"The tag '...' does not exist or is deactivated."*
 
-Use a free-text phrase search instead:
-
-```
-index=cyber_range "mission-91"
-```
-
-To narrow to the attack itself:
+Use a free-text phrase search instead, with the full session-scoped tag:
 
 ```
-index=cyber_range "mission-91" ".."          # path traversal
-index=cyber_range "mission-91" "OR"          # SQL injection
-index=cyber_range "mission-91" ";"           # command injection
-index=cyber_range "mission-91" "<script"     # reflected XSS
+index=cyber_range "mission-97-rdocxl4o"
+```
+
+The platform builds this query for you in the Splunk tab. To narrow to the attack:
+
+```
+index=cyber_range "mission-97-rdocxl4o" ".."          # path traversal
+index=cyber_range "mission-97-rdocxl4o" "OR"          # SQL injection
+index=cyber_range "mission-97-rdocxl4o" ";"           # command injection
+index=cyber_range "mission-97-rdocxl4o" "<script"     # reflected XSS
 ```
 
 ---
 
-## 8. Configuration reference
+## 9. Configuration reference
 
 `.env` at the repository root:
 
@@ -484,7 +665,7 @@ RELOAD=True
 | `POSTGRES_*` | `database.py` | Platform database connection |
 | `SPLUNK_HEC_TOKEN` | `main.py` log config | 36 characters. Rotate if it has ever been committed. |
 | `SPLUNK_HEC_URL` | `main.py` log config | **https**, port 8088 |
-| `SPLUNK_WEB_URL` | `main.py` proxy, `index.html` | **http**, port 8000 |
+| `SPLUNK_WEB_URL` | `main.py` proxy | **http**, port 8000 |
 
 Two values are still hard-coded and worth knowing about:
 
@@ -501,17 +682,18 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 ---
 
-## 9. Running the platform
+## 10. Running the platform
 
-### Start the backend
+### Start the backend — administrator only
 
 ```bash
 cd backend
 python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Then open `http://localhost:8000/`. The backend serves the frontend, so there is no
-separate frontend server.
+The administrator opens `http://localhost:8000/` on the host. Everyone else uses
+`http://<host-ip>:8000/`. The backend serves the frontend, so there is no separate
+frontend server.
 
 ### Import CVEs
 
@@ -535,13 +717,13 @@ The import survives a browser refresh — the page reattaches to the running job
 ### Mission state survives a refresh
 
 Mission progress is saved to `sessionStorage` every five seconds. Reloading mid-mission
-restores the mission, step, timer, flag state and rule. The container is untouched
-by a browser reload, so you reconnect to the same target. Terminal scrollback and
+restores the mission, step, timer, flag state and rule — and because the session id
+lives in the same store, it reconnects to the *same* container. Terminal scrollback and
 command history are not preserved.
 
 ---
 
-## 10. The vulnerability template system
+## 11. The vulnerability template system
 
 ### The idea
 
@@ -650,7 +832,7 @@ the fingerprint), bump `TEMPLATE_VERSION` in `container_builder.py`.
 
 ---
 
-## 11. The learner's terminal
+## 12. The learner's terminal
 
 The terminal is **not a shell on the target**. It's an HTTP client: `curl` commands
 are relayed through the backend to the mission's container, and the real response comes
@@ -700,7 +882,7 @@ Capture requires the response to contain `FLAG-FOUND` **and** the mission's uniq
 
 ---
 
-## 12. The blocking-rule replay loop
+## 13. The blocking-rule replay loop
 
 This is the platform's distinguishing feature, and the answer to "how do you know the
 learner's detection actually works?"
@@ -725,8 +907,8 @@ The panel above the input explains regex escaping, because `../` unescaped means
 `POST /missions/{id}/test_rule`:
 
 1. Compiles the rule — an invalid pattern is rejected immediately
-2. Removes the mission container and recreates it **on the same port** with
-   `WAF_RULE` set to the learner's regex
+2. Removes **this learner's** container and recreates it on the same port with
+   `WAF_RULE` set to their regex
 3. Waits for the target to come back up
 4. **Replays the exact request that captured the flag**
 5. Also requests `/` to check normal traffic still works
@@ -759,21 +941,25 @@ validation"* rather than as a CI/CD pipeline.
 
 ---
 
-## 13. API reference
+## 14. API reference
 
-Interactive documentation is generated automatically at `http://localhost:8000/docs`.
+Interactive documentation is generated automatically at `http://<host>:8000/docs`.
+
+All mission endpoints accept a `session` parameter identifying the learner's browser
+tab. It defaults to `solo`, so single-user use needs no change.
 
 ### Missions
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/missions/{id}/preview` | Generate and cache both briefs; no container |
-| `GET` | `/missions/{id}/start_stream` | **SSE.** Build and start the mission, streaming progress |
-| `GET` | `/missions/{id}/proxy?path=` | Relay one request to the container (used by the terminal) |
-| `GET` | `/missions/{id}/browse?path=` | Serve the target through the backend (used by the Target tab) |
-| `GET` | `/missions/{id}/activity` | Every request that reached the target |
-| `GET` | `/missions/{id}/flag_status` | Whether the flag has been captured, and by which request |
+| `GET` | `/missions/{id}/start_stream?session=` | **SSE.** Build and start the mission, streaming progress |
+| `GET` | `/missions/{id}/proxy?path=&session=` | Relay one request to the container (used by the terminal) |
+| `GET` | `/missions/{id}/browse?path=&session=` | Serve the target through the backend (used by the Target tab) |
+| `GET` | `/missions/{id}/activity?session=` | Every request that reached this learner's target |
+| `GET` | `/missions/{id}/flag_status?session=` | Whether the flag has been captured, and by which request |
 | `POST` | `/missions/{id}/test_rule` | Redeploy with a WAF rule and replay the attack |
+| `POST` | `/missions/{id}/end?session=` | Remove this learner's container and clear its state |
 
 `start_stream` is a `GET` because `EventSource` only issues GETs.
 
@@ -807,12 +993,13 @@ Interactive documentation is generated automatically at `http://localhost:8000/d
 | `POST` | `/admin/purge_images` | Remove all generated lab images and containers |
 | `GET` | `/splunk-proxy/{path}` | Reverse proxy for Splunk Web |
 
-> `/admin/*` endpoints are unauthenticated and destructive. Do not expose the backend
-> beyond localhost or a trusted network without adding authentication.
+> `/admin/*` endpoints are unauthenticated and destructive. With the platform exposed
+> on the network, anyone who can reach it can call them. Trusted networks only until
+> authentication is added.
 
 ---
 
-## 14. AI features
+## 15. AI features
 
 All model calls go to a local Ollama instance. No CVE data leaves the network.
 
@@ -824,7 +1011,7 @@ All model calls go to a local Ollama instance. No CVE data leaves the network.
 | Classification | `classify_vulnerability_pattern` | Maps a CVE to one of 12 classes or `unsupported` |
 | Template params | `generate_template_params` | JSON mode; regex extraction takes priority over the model |
 | Hints | `generate_hint` | Sees both terminal commands **and** the container's real request log |
-| Grading | `grade_report` | Four sections × 25; empty sections are forced to zero in code |
+| Grading | `grade_report` | Four sections × 25, with three layers of enforcement |
 | Explainers | `PATTERN_EXPLAINERS` | Static, not generated — plain-English class descriptions |
 
 ### Guarding against small-model failure
@@ -844,16 +1031,31 @@ plain, but always correct. The learner never sees a failure.
 The same layered approach applies to JSON outputs: `format: json` at the sampler level,
 regex extraction of the first `{...}`, schema validation, and typed defaults.
 
-Grading is additionally constrained in code, not by prompt: any section under 15
-characters scores zero, and the total is capped at the sum of the sections. Two empty
-sections make a score above 50 arithmetically impossible.
+### Grading enforcement
 
-If the retry line appears in your logs on most missions, the model is the bottleneck.
-`llama3.2:3b` or `qwen2.5:3b` follow instructions considerably better at similar CPU cost.
+Grading is constrained in **code**, not by prompt, because small models are
+relentlessly generous. Three layers:
+
+1. **Structural gibberish detection** (`_is_gibberish`) — vowel ratios, consonant
+   runs, home-row bias, token repetition. No vocabulary list, so it doesn't punish
+   someone who writes well but uses unexpected words. Two independent signals are
+   required before rejecting.
+2. **Relevance judged against verified facts** — the prompt receives the payload that
+   actually captured the flag and the rule that actually passed the replay test, so
+   the model compares the write-up against ground truth rather than grading style.
+3. **An arithmetic cap** — `score = min(model_score, sum(sections))`, and any section
+   failing layer 1 is forced to 0. Two empty or nonsense sections make a score above
+   50 impossible regardless of what the model claims.
+
+If a bad report still scores well, check which of the three layers isn't running.
+
+If the brief-retry line appears in your logs on most missions, the model is the
+bottleneck. `llama3.2:3b` or `qwen2.5:3b` follow instructions considerably better at
+similar CPU cost.
 
 ---
 
-## 15. Operations and maintenance
+## 16. Operations and maintenance
 
 ### Routine
 
@@ -862,13 +1064,14 @@ If the retry line appears in your logs on most missions, the model is the bottle
 cd backend && python -u scanner_import.py
 ```
 
-Stale mission containers are removed automatically on backend startup, so no manual
-Docker cleanup is needed in normal use.
+Stopped mission containers are removed automatically on backend startup. **Running**
+containers are left alone, so restarting the backend does not kill active learner
+sessions.
 
 ### Manual cleanup
 
 ```powershell
-# Remove all mission containers
+# Remove all mission containers (ends every session)
 docker ps -aq --filter "name=mission-" | ForEach-Object { docker rm -f $_ }
 
 # Remove all generated lab images
@@ -898,14 +1101,36 @@ Existing containers keep the old token until recreated.
 
 ---
 
-## 16. Troubleshooting
+## 17. Troubleshooting
+
+### Access from other machines
+
+**The page doesn't load from another machine**
+Check three things in order: `API_BASE` is `window.location.origin` and not a
+hard-coded localhost; the backend was started with `--host 0.0.0.0`; the firewall rule
+from [7.2](#72-one-time-setup-on-the-host) exists. Then run
+`Test-NetConnection <host-ip> -Port 8000` from the learner's machine.
+
+**The page loads but nothing works**
+The frontend reached the host but the API calls didn't. Open DevTools → Network on the
+learner's machine and check which host the failing requests address. If it's
+`localhost`, `API_BASE` is still hard-coded, or the browser cached the old file —
+hard-refresh with Ctrl+Shift+R.
+
+**Wrong IP address**
+Docker Desktop adds virtual adapters. Use the IPv4 address under your Wi-Fi or Ethernet
+adapter, not `vEthernet (WSL)` or `Docker Desktop`.
 
 ### Missions
 
+**"You already have this mission starting"**
+Only fires for the *same browser tab*. Another learner on the same CVE is fine.
+
 **"Failed to start mission: ... failed to initialize logging driver"**
 Docker can't reach Splunk HEC. The platform falls back to running without log
-forwarding and says so in the build log. Check `Test-NetConnection <splunk-host> -Port 8088`
-and that the container test in §7.5 returns 200.
+forwarding and says so in the build log. Check
+`Test-NetConnection <splunk-host> -Port 8088` and that the container test in §8.5
+returns 200.
 
 **Container starts with `"Type":"json-file"` instead of `"splunk"`**
 The log config didn't apply. `LogConfig(driver=..., options=...)` **silently produces
@@ -919,12 +1144,12 @@ log_config = {"Type": "splunk", "Config": { ... }}
 Verify with:
 
 ```powershell
-docker inspect mission-<id> --format "{{json .HostConfig.LogConfig}}"
+docker inspect mission-<id>-<session> --format "{{json .HostConfig.LogConfig}}"
 ```
 
 **The lab doesn't match the CVE description**
-The parameter names fell back to defaults. Check the backend log for
-`[PARAMS RAW]` to see what the model returned, and `[BUILD:params]` for what was used.
+The parameter names fell back to defaults. Check the backend log for `[PARAMS RAW]` to
+see what the model returned, and `[BUILD:params]` for what was used.
 
 **Every input returns the same response**
 The parameter name is wrong, so `request.args.get(name, default)` always returns the
@@ -953,13 +1178,14 @@ the import window, or start missions from the **Archived** tab.
 
 **`index=cyber_range` returns nothing**
 Check the time picker isn't on a real-time window — real-time shows only events
-arriving from now on. Then test HEC directly (§7.5).
+arriving from now on. Then test HEC directly (§8.5).
 
 **`tstats` fails with "not supported in a real-time search"**
 Same cause. Choose **All time** from Presets, not "All time (real-time)".
 
-**"The tag 'mission-91' does not exist or is deactivated"**
-`tag` is a reserved SPL keyword. Use a phrase search: `index=cyber_range "mission-91"`.
+**"The tag '...' does not exist or is deactivated"**
+`tag` is a reserved SPL keyword. Use a phrase search:
+`index=cyber_range "mission-97-..."`.
 
 **"No cookie support detected" in the Splunk tab**
 The session cookie is blocked in a cross-origin iframe. Use the launcher panel, put
@@ -969,12 +1195,12 @@ Splunk Web on HTTPS, or serve it through `/splunk-proxy/`.
 
 **The page renders as a wall of plain text**
 Something closed the `<style>` block early. HTML parsers end a style element at the
-first `</style>` they see — **including inside a CSS comment**. Never write
-`</style>` in a comment.
+first `</style>` they see — **including inside a CSS comment**. Never write `</style>`
+in a comment.
 
 **A button does nothing at all**
-Almost always a thrown exception. Check the console first; silent inaction is rarely
-a logic bug and usually a `ReferenceError`.
+Almost always a thrown exception. Check the console first; silent inaction is rarely a
+logic bug and usually a `ReferenceError`.
 
 **Panels vanish after editing `switchWorkspace`**
 A partial paste — a variable used but not declared. Replace the whole function rather
@@ -982,22 +1208,49 @@ than patching lines.
 
 ---
 
-## 17. Known limitations
+## 18. Known limitations
 
 | Limitation | Detail |
 |-----------|--------|
-| **No authentication** | Anyone who can reach the backend can start missions and call `/admin/*`. Localhost or trusted network only. |
+| **No authentication** | Anyone who can reach the host can start missions and call `/admin/*`. Trusted networks only. |
+| **Host is a single point of failure** | Closing the backend or Docker ends every learner's session. |
+| **In-memory session state** | Flag-capture state lives in the backend process. A restart leaves containers running but resets recorded progress; re-running the winning request re-captures the flag. |
 | **Splunk embedding** | Blocked by cross-origin cookie policy. The Splunk tab is a launcher, not an embed. |
 | **No programmatic Splunk read** | Port 8089 (management API) is typically closed, so the platform cannot verify SPL the learner writes. This is why rule validation uses WAF replay instead. |
 | **XSS verification is weak** | Nothing executes server-side, so the flag fires on a marker match. The Target tab is where XSS becomes real. |
 | **SSRF is simulated** | The lab recognizes internal addresses rather than actually fetching them — a container making arbitrary outbound requests on user input would be a liability. |
 | **Classification accuracy** | With twelve classes, phi3 confuses similar pairs (IDOR vs privilege escalation especially). Check `[BUILD:classify]` in the logs. |
-| **Import doesn't survive a backend restart** | It survives a browser refresh, but `--reload` kills the subprocess. |
-| **Single user** | No per-learner state, scoring history, or concurrency handling beyond the per-mission lock. |
+| **Ollama serialization** | Concurrent uncached mission starts queue at brief generation unless `OLLAMA_NUM_PARALLEL` is raised. |
+| **No scoring history** | Reports are graded and exported but not persisted per learner. |
 
 ---
 
-## 18. Development history
+## 19. Demo video
+
+A recorded walkthrough of the platform — importing CVEs, starting a mission,
+exploiting the target, investigating in Splunk, deploying a blocking rule, and
+generating the report.
+
+<!-- Replace the placeholder below with the video link or embed once uploaded. -->
+
+**▶ Watch the demo:** _[link to be added]_
+
+Contents of the recording:
+
+| Segment | Shows |
+|---------|-------|
+| 0:00 | Dashboard — imported CVEs, severity and interest scores |
+| 0:30 | Mission brief modal, entering a mission, live build stream |
+| 1:00 | Recon in the terminal — `curl "/"`, form discovery, `what` |
+| 2:00 | Exploiting the target and capturing the flag |
+| 3:00 | Splunk investigation of the learner's own requests |
+| 4:00 | Writing a blocking rule and watching the replay verdict |
+| 5:00 | Report, grading, PDF download |
+| 6:00 | Two machines running the same mission simultaneously |
+
+---
+
+## 20. Development history
 
 | Phase | What was built |
 |-------|---------------|
@@ -1011,6 +1264,7 @@ than patching lines.
 | 8 | WAF replay loop: rules deployed and tested against the learner's own attack. |
 | 9 | Graded reports and PDF export. |
 | 10 | Twelve vulnerability classes, session persistence, streaming progress, dark UI. |
+| 11 | Multi-user: network access, per-session containers, concurrent missions. |
 
 ### Notable bugs worth remembering
 
@@ -1022,3 +1276,7 @@ than patching lines.
   traversal falsely captured the flag.
 - A CSS comment containing `</style>` terminated the stylesheet three lines in.
 - `.env` values written as `KEY = "value"` are parsed with the spaces and quotes intact.
+- `os.path.dirname(__file__)` returns `""` when the process is launched from that
+  file's own directory, which silently broke the import subprocess.
+- `API_BASE = 'http://localhost:8000'` meant every learner's browser called *its own*
+  machine. One line — `window.location.origin` — made the platform multi-user.

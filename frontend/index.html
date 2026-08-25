@@ -1222,6 +1222,21 @@
         
         const SPLUNK_URL = 'http://172.16.25.2:8000';
 
+        const SESSION_ID = (function () {
+            let s = sessionStorage.getItem('cr_sid');
+            if (!s) {
+                s = Math.random().toString(36).slice(2, 10);
+                sessionStorage.setItem('cr_sid', s);
+            }
+            return s;
+        })();
+
+        function missionUrl(path, extra) {
+            return API_BASE + '/missions/' + currentMissionId + path +
+                   (path.indexOf('?') === -1 ? '?' : '&') +
+                   'session=' + SESSION_ID + (extra ? '&' + extra : '');
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             initTerminal();
             if (!restoreSession()) loadMissions();
@@ -1273,11 +1288,7 @@
            
             
             const ta = wrapper.querySelector('.xterm-helper-textarea');
-            console.log('helper textarea found:', !!ta);
-            wrapper.addEventListener('paste', () => console.log('paste on wrapper'), true);
-            if (ta) ta.addEventListener('paste', () => console.log('paste on textarea'), true);
-            document.addEventListener('paste', () => console.log('paste on document'), true);
-
+            
             term.onData((data) => {
                 lastCommandTime = Date.now();
                 hintTriggered = false;
@@ -1309,7 +1320,8 @@
                         '&current_step=' + encodeURIComponent('Step ' + (currentStep + 1)) +
                         '&actions=' + encodeURIComponent(actions) +
                         '&cve_description=' + encodeURIComponent(cveDesc) +
-                        '&vulnerability_id=' + currentMissionId;
+                        '&vulnerability_id=' + currentMissionId +  
+                        '&session='+ SESSION_ID;
             fetch(url).then(r => r.json())
                 .then(data => {
                     let pre = '';
@@ -1474,7 +1486,7 @@
             if (flagPollInterval) clearInterval(flagPollInterval);
             flagPollInterval = setInterval(() => {
                 if (!isMissionActive || flagCaptured) return;
-                fetch(API_BASE + '/missions/' + currentMissionId + '/flag_status')
+                fetch(missionUrl('/flag_status'))
                     .then(r => r.json())
                     .then(d => {
                         if (d.flag_path && !flagCaptured) {
@@ -1541,8 +1553,9 @@
                 }
                 const path = p.startsWith('/') ? p : '/' + p;
                 const c = document.querySelector('#target-container .iframe-container');
-                c.innerHTML = '<iframe id="app-iframe" src="' + API_BASE + '/missions/' +
-                              currentMissionId + '/browse?path=' + encodeURIComponent(path) + '"></iframe>';
+                c.innerHTML = '<iframe id="app-iframe" src="' +
+                              missionUrl('/browse', 'path=' + encodeURIComponent(path)) +
+                              '"></iframe>';
                 switchWorkspace('target');
                 term.writeln('\x1b[2;37mOpened ' + path + ' in the Target tab.\x1b[0m');
                 prompt_(); return;
@@ -1604,7 +1617,7 @@
             currentTargetPath = path;
             term.writeln('\x1b[2;37m> GET ' + path + '\x1b[0m');
 
-            fetch(API_BASE + '/missions/' + currentMissionId + '/proxy?path=' + encodeURIComponent(path))
+            fetch(missionUrl('/proxy', 'path=' + encodeURIComponent(path)))
                 .then(r => r.json())
                 .then(data => {
                     if (data.error) {
@@ -1671,7 +1684,7 @@
 
         function showActivity(blueMode) {
             commandRunning = true;
-            fetch(API_BASE + '/missions/' + currentMissionId + '/activity')
+            fetch(missionUrl('/activity'))
                 .then(r => r.json())
                 .then(data => {
                     const reqs = data.requests || [];
@@ -1743,6 +1756,7 @@
                 grid.innerHTML = '<div class="empty-state"><div class="icon">[!]</div><div>' + err.message + '</div></div>';
             });
         }
+
         function renderMissions() {
             const grid = document.getElementById('missions-grid');
             const list = currentTab === 'active' ? activeMissions : archivedMissions;
@@ -1751,7 +1765,6 @@
                 return;
             }
             grid.innerHTML = '';
-           
 
             list.forEach(vuln => {
                 const card = document.createElement('div');
@@ -1766,7 +1779,11 @@
                     card.classList.add('no-id');
                 }
 
-                card.innerHTML = 
+                const btn = (id !== null)
+                    ? '<button class="start-btn" onclick="event.stopPropagation();showMissionBrief(' + id + ')">Start Mission</button>'
+                    : '<button class="start-btn" disabled>No id</button>';
+
+                card.innerHTML =
                     '<div class="card-header">' +
                         '<span class="cve-id">' + (vuln.cve_id || 'Unknown') + '</span>' +
                         '<span class="severity severity-' + sev + '">' + (vuln.severity || 'Unknown') + '</span>' +
@@ -1777,11 +1794,12 @@
                         '<span class="score">Score: <strong>' + (vuln.interestingness_score || '?') + '/10</strong></span>' +
                         '<span class="status-badge ' + currentTab + '">' + currentTab + '</span>' +
                     '</div>' +
-                    '<button class="start-btn" onclick="showMissionBrief(' + vuln.id + ')">Start Mission</button>';
+                    btn;
+
                 grid.appendChild(card);
             });
         }
-
+        
         function switchTab(tab) {
             currentTab = tab;
             document.querySelectorAll('.tab-bar .tab').forEach(el => el.classList.remove('active'));
@@ -1850,7 +1868,7 @@
                 log.textContent = lines.slice(-14).join('\n');
             }
 
-            missionES = new EventSource(API_BASE + '/missions/' + currentMissionId + '/start_stream');
+            missionES = new EventSource(missionUrl('/start_stream'));
 
             missionES.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
@@ -1922,7 +1940,7 @@
 
             if (data.app_url) {
                 const c = document.querySelector('#target-container .iframe-container');
-                const src = API_BASE + '/missions/' + currentMissionId + '/browse?path=/';
+                const src = missionUrl('/browse', 'path=%2F');
                 const mount = () => c.innerHTML = '<iframe id="app-iframe" src="' + src + '"></iframe>';
                 if (data.target_ready) mount();
                 else {
@@ -2002,7 +2020,10 @@
             if (tab === 'splunk') {
                 splunk.classList.remove('hidden');
                 var c = splunk.querySelector('.iframe-container');
-                var base = 'index=cyber_range "mission-' + currentMissionId + '"';
+                var tag = (currentMissionData && currentMissionData.splunk_tag) ||
+                  ('mission-' + currentMissionId + '-' + SESSION_ID);
+                var base = 'index=cyber_range "' + tag + '"';
+                //var base = 'index=cyber_range "mission-' + currentMissionId + '"';
                 var markers = { path_traversal: '".."', sql_injection: '"OR"',
                                 command_injection: '";"', reflected_xss: '"<script"' };
                 var marker = markers[currentMissionData && currentMissionData.pattern] || '';
@@ -2062,7 +2083,10 @@
                 term.writeln('\x1b[2;37mNote it down — you\'ll need it for your detection rule.\x1b[0m');
             }
             term.writeln('\x1b[1;33mBlue Team phase unlocked. Investigate the logs in the Splunk tab.\x1b[0m');
-            term.writeln('\x1b[2;37mTry: index=cyber_range "mission-' + currentMissionId + '"\x1b[0m');
+
+            var tag = (currentMissionData && currentMissionData.splunk_tag) ||
+                      ('mission-' + currentMissionId + '-' + SESSION_ID);
+            term.writeln('\x1b[2;37mTry: index=cyber_range "' + tag + '"\x1b[0m');
 
             document.getElementById('wtab-splunk').classList.remove('disabled');
 
@@ -2129,7 +2153,8 @@
             fetch(API_BASE + '/missions/' + currentMissionId + '/test_rule', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rule: rule, payload: successfulPayload })
+                body: JSON.stringify({ rule: rule, payload: successfulPayload,
+                                       session: SESSION_ID })
             })
             .then(r => r.json())
             .then(data => {
@@ -2424,6 +2449,9 @@
             if (reportTemplate) {
                 reportTemplate.remove();
             }
+            if (currentMissionId) {
+                fetch(missionUrl('/end'), { method: 'POST' }).catch(() => {});
+            }
             document.getElementById('help-hint').innerHTML = '<span class="hint-icon">◆</span> AI hints will appear here when you\'re stuck or idle.';
             document.getElementById('help-brief').textContent = 'Start a mission to see the brief here.';
             currentMissionData = null;
@@ -2505,8 +2533,8 @@
 
             if (currentMissionData.app_url) {
                 const c = document.querySelector('#target-container .iframe-container');
-                c.innerHTML = '<iframe id="app-iframe" src="' + API_BASE + '/missions/' +
-                              currentMissionId + '/browse?path=/"></iframe>';
+                c.innerHTML = '<iframe id="app-iframe" src="' +
+                              missionUrl('/browse', 'path=%2F') + '"></iframe>';
             }
 
             if (term) {
