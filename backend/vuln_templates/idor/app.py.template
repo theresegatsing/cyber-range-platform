@@ -2,6 +2,14 @@ from flask import Flask, request
 import os, re as _re
 
 app = Flask(__name__)
+
+@app.errorhandler(Exception)
+def _lab_error(e):
+    import traceback
+    tb = traceback.format_exc()
+    print("[LAB ERROR] " + tb, flush=True)
+    return "<pre>Lab error: " + type(e).__name__ + ": " + str(e) + "\n\n" + tb + "</pre>", 500
+
 FLAG_TOKEN = "{flag_token}"
 FLAG_REASON = "{flag_reason}"
 WAF_RULE = os.environ.get("WAF_RULE", "").strip()
@@ -32,11 +40,18 @@ PAGE = """
   <input name="{param_name}" value="{public_file}" size="40">
   <button>Open record</button>
 </form>
+<p style="color:#888;font-size:13px">Records are fetched by ID with no ownership check.</p>
 """
 
-RECORDS = {{"1": "Routine maintenance log — nothing sensitive.",
-            "2": "Meeting notes, public.",
-            "{secret_file}": None}}
+PUBLIC = {{
+    "1": "Routine maintenance log — nothing sensitive.",
+    "2": "Meeting notes, public.",
+    "3": "Quarterly summary, already published.",
+}}
+
+SECRET_ID = "{secret_file}"
+
+FOOTER = "<hr><a href='/'>&larr; Back</a>"
 
 
 @app.route('/')
@@ -47,9 +62,21 @@ def home():
 @app.route('/{endpoint}')
 def vuln():
     rid = request.args.get('{param_name}', '{public_file}').strip()
+
     # intentionally vulnerable — no ownership check on the requested ID
-    if rid == "{secret_file}":
-        return "<pre>Record " + rid + " [RESTRICTED]\\n\\n" + _flag() + "</pre><hr><a href='/'>&larr; Back</a>"
-    if rid in RECORDS:
-        return "<pre>Record " + rid + ": " + RECORDS[rid] + "</pre><hr><a href='/'>&larr; Back</a>"
-    return "<pre>No record " + rid + ". Valid IDs range from 1 upward.</pre><hr><a href='/'>&larr; Back</a>"
+    if rid == SECRET_ID:
+        return ("<pre>Record " + rid + "  [RESTRICTED — other user's data]\n\n"
+                + _flag() + "</pre>" + FOOTER)
+
+    if rid in PUBLIC:
+        return "<pre>Record " + rid + ": " + PUBLIC[rid] + "</pre>" + FOOTER
+
+    # verbose error leaks the full ID range, so the target is discoverable
+    known = sorted(list(PUBLIC) + [SECRET_ID], key=lambda x: (len(x), x))
+    return ("<pre>No record with ID " + rid + ".\n\n"
+            "Records currently in the store: " + ", ".join(known) + "\n"
+            "(some are owned by other accounts)</pre>" + FOOTER)
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=80)

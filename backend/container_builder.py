@@ -171,7 +171,7 @@ def build_cve_image(docker_client, cve_id: str, description: str, emit=None):
 
 import hashlib
 
-TEMPLATE_VERSION = "5"      # bump manually for a forced global rebuild
+TEMPLATE_VERSION = "7"      # bump manually for a forced global rebuild
 FINGERPRINT_KEY = "cyber_range_fingerprint"
 
 

@@ -5,6 +5,14 @@ import re as _re
 
 app = Flask(__name__)
 
+@app.errorhandler(Exception)
+def _lab_error(e):
+    import traceback
+    tb = traceback.format_exc()
+    print("[LAB ERROR] " + tb, flush=True)
+    return "<pre>Lab error: " + type(e).__name__ + ": " + str(e) + "\n\n" + tb + "</pre>", 500
+
+
 WAF_RULE = os.environ.get("WAF_RULE", "").strip()
 
 BASE_COMMAND = "{base_command}"

@@ -2,6 +2,14 @@ from flask import Flask, request
 import os, re as _re
 
 app = Flask(__name__)
+
+@app.errorhandler(Exception)
+def _lab_error(e):
+    import traceback
+    tb = traceback.format_exc()
+    print("[LAB ERROR] " + tb, flush=True)
+    return "<pre>Lab error: " + type(e).__name__ + ": " + str(e) + "\n\n" + tb + "</pre>", 500
+
 FLAG_TOKEN = "{flag_token}"
 FLAG_REASON = "{flag_reason}"
 WAF_RULE = os.environ.get("WAF_RULE", "").strip()
@@ -24,20 +32,22 @@ def _waf():
         return "<pre>403 — request blocked by detection rule</pre>", 403
     return None
 
+
 PAGE = """
 <h3>{app_title}</h3>
 <p style="color:#555">Asset: {asset_name}. Enter a URL and the server will fetch it for you.</p>
 <form action="/{endpoint}">
-  <input name="{param_name}" value="{public_file}" size="52">
+  <input name="{param_name}" value="https://example.com" size="52">
   <button>Fetch</button>
 </form>
+<p style="color:#888;font-size:13px">The fetch runs server-side, from inside the network.</p>
 """
 
-INTERNAL = {{
-    "127.0.0.1:8081": "internal-admin",
-    "localhost:8081": "internal-admin",
-    "169.254.169.254": "metadata",
-}}
+INTERNAL_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0", "[::1]", "::1",
+                  "169.254.169.254", "metadata.google.internal",
+                  "10.", "192.168.", "172.16.", "172.17.", "172.18."]
+
+FOOTER = "<hr><a href='/'>&larr; Back</a>"
 
 
 @app.route('/')
@@ -47,28 +57,36 @@ def home():
 
 @app.route('/{endpoint}')
 def vuln():
-    url = request.args.get('{param_name}', '{public_file}').strip()
+    url = request.args.get('{param_name}', 'https://example.com').strip()
     low = url.lower()
 
-    # intentionally vulnerable — no allowlist, no blocking of internal addresses
-    for marker in INTERNAL:
-        if marker in low:
-            return ("<pre>Fetched " + url + "\\n\\nHTTP/1.1 200 OK\\n"
-                    "Content-Type: text/plain\\n\\n"
-                    "[internal service response]\\n" + _flag() +
-                    "</pre><hr><a href='/'>&larr; Back</a>")
-
+    # intentionally vulnerable — no scheme allowlist, no internal-address filter
     if low.startswith("file://"):
-        return ("<pre>Fetched " + url + "\\n\\n[local file contents]\\n" + _flag() +
-                "</pre><hr><a href='/'>&larr; Back</a>")
+        return ("<pre>Fetched " + url + "\n\n"
+                "[contents of the requested local file]\n\n"
+                + _flag() + "</pre>" + FOOTER)
 
     if not (low.startswith("http://") or low.startswith("https://")):
-        return "<pre>Only http, https and file schemes are supported.</pre><hr><a href='/'>&larr; Back</a>"
+        return ("<pre>Only http, https and file schemes are supported.</pre>" + FOOTER)
 
-    return ("<pre>Fetched " + url + "\\n\\nHTTP/1.1 200 OK\\n\\n"
-            "&lt;html&gt;Example page content&lt;/html&gt;\\n\\n"
-            "Nothing sensitive here — this is an external site."
-            "</pre><hr><a href='/'>&larr; Back</a>")
+    try:
+        host = low.split("://", 1)[1].split("/")[0]
+    except Exception:
+        host = ""
+
+    for marker in INTERNAL_HOSTS:
+        if host.startswith(marker):
+            return ("<pre>Fetched " + url + "\n\n"
+                    "HTTP/1.1 200 OK\n"
+                    "Content-Type: text/plain\n\n"
+                    "[response from an internal service that is not exposed publicly]\n\n"
+                    + _flag() + "</pre>" + FOOTER)
+
+    return ("<pre>Fetched " + url + "\n\n"
+            "HTTP/1.1 200 OK\n\n"
+            "&lt;html&gt;Example page content&lt;/html&gt;\n\n"
+            "Nothing sensitive here — this is a public site. The fetch happens "
+            "server-side, so consider where else the server can reach.</pre>" + FOOTER)
 
 
 if __name__ == '__main__':

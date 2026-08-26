@@ -521,11 +521,11 @@ def score_cve(cve_id: str, description: str, cvss_score: float, is_kev: bool = F
 
 @app.get("/ai/command_suggest")
 def get_command_suggestion(goal: str, current_step: str, cve_description: str = "",
-                           vulnerability_id: int = None):
+                           vulnerability_id: int = None, session: str = "solo"):
     lab = {}
     if vulnerability_id is not None:
         try:
-            container = docker_client.containers.get(f"mission-{vulnerability_id}")
+            container = docker_client.containers.get(_mission_name(vulnerability_id, session))
             img = docker_client.images.get(container.image.id)
             lab = json.loads((img.labels or {}).get("cyber_range_lab") or "{}")
         except Exception:
@@ -687,7 +687,7 @@ def cleanup_stale_missions():
     if kept:
         print(f"▶️  Left {len(kept)} running mission(s) alone: {', '.join(kept)}")
 
-        
+
 @app.get("/missions/{vulnerability_id}/activity")
 def mission_activity(vulnerability_id: int, limit: int = 40, session: str = "solo"):
     return {"requests": _state(vulnerability_id, session)["requests"][-limit:]}
@@ -922,7 +922,7 @@ def _target_port(vid: int, session: str = "solo"):
 @app.get("/missions/{vulnerability_id}/browse", response_class=HTML)
 def browse_target(vulnerability_id: int, request: Request, path: str = "/", session: str = "solo"):
     """Serve the target through the backend so Target-tab traffic is observable."""
-    
+
     params = dict(request.query_params)
     params.pop("path", None)
     params.pop("session", None)
@@ -947,14 +947,24 @@ def browse_target(vulnerability_id: int, request: Request, path: str = "/", sess
         st["flag_path"] = full
         print(f"🚩 Flag captured via Target tab: {full}")
 
-    base = f"/missions/{vulnerability_id}/browse?session={_sid(session)}"
-    body = _re.sub(r'action=(["\'])(/[^"\']*)\1',
-                   lambda m: f'action="{base}"><input type="hidden" name="__path" value="{m.group(2)}"',
-                   body)
-    body = _re.sub(r'href=(["\'])(/[^"\']*)\1',
-                   lambda m: f'href="{base}&path={m.group(2)}"', body)
-    return HTML(body, status_code=status)
+    base = f"/missions/{vulnerability_id}/browse"
+    sid = _sid(session)
 
+    def _form(target):
+        return (f'action="{base}">'
+                f'<input type="hidden" name="session" value="{sid}">'
+                f'<input type="hidden" name="__path" value="{target}">')
+
+    try:
+        # <form action="/x">  →  action points at the proxy, real path carried as a field
+        body = _re.sub(r'action=(["\'])(/[^"\']*)\1\s*>',
+                       lambda m: _form(m.group(2)), body)
+        body = _re.sub(r'href=(["\'])(/[^"\']*)\1',
+                       lambda m: f'href="{base}?session={sid}&path={m.group(2)}"', body)
+    except Exception as e:
+        print(f"[BROWSE] link rewrite failed: {e}")
+
+    return HTML(body, status_code=status)
 
 @app.get("/missions/{vulnerability_id}/flag_status")
 def flag_status(vulnerability_id: int, session: str = "solo"):
