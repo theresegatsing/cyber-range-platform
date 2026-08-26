@@ -1235,6 +1235,8 @@ generating the report.
 
 **▶ Watch the demo:**https://youtu.be/WPHGJMAK5Hk
 
+_Best viewed at 720p — terminal text is small at lower resolutions._
+
 Contents of the recording:
 
 | Segment | Shows |
