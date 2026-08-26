@@ -1233,7 +1233,7 @@ generating the report.
 
 <!-- Replace the placeholder below with the video link or embed once uploaded. -->
 
-**▶ Watch the demo:** [`cyber_range_demo.mp4`](cyber_range_demo.mp4)
+**▶ Watch the demo:**https://youtu.be/WPHGJMAK5Hk
 
 Contents of the recording:
 
